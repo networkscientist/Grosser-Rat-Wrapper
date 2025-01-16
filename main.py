@@ -27,15 +27,15 @@ def create_linklist(page_resp):
     return gsnr_list, link_list
 
 
-async def get(url, session):
-    async with session.get(url, headers={"User-Agent": "XY"}) as response:
+async def get_async(url, session):
+    async with session.get_async(url, headers={"User-Agent": "XY"}) as response:
         resp = await response.read()
     return resp
 
 
-async def get_dok_details(link_list):
+async def get_dok_details_async(link_list):
     async with aiohttp.ClientSession() as session:
-        tasks = [get(url=url, session=session) for url in link_list]
+        tasks = [get_async(url=url, session=session) for url in link_list]
         print(*tasks)
         results = await asyncio.gather(*tasks)
     return results
@@ -199,7 +199,7 @@ def tag_pdf(data):
 pageResp = get_member_page('15003908')
 gsnrList, linkList = create_linklist(pageResp)
 
-gesHtmlList = asyncio.run(get_dok_details(linkList))
+gesHtmlList = asyncio.run(get_dok_details_async(linkList))
 extract_ges_dok_info_2(gesHtmlList)
 # with open(Path("/home/me/PycharmProjects/Grosser-Rat-Wrapper/dok_detail_list.pkl"), "wb") as f:
 #     pickle.dump(ges_html_list, f)
