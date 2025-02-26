@@ -8,9 +8,13 @@ import pandas as pd
 import requests
 from lxml.html import fromstring
 from pdfrw import PdfReader, PdfWriter
+from typing import List
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.orm import DeclarativeBase, Mapped, relationship
 from datetime import date
+
+from sqlalchemy.testing.schema import mapped_column
 
 # Basics
 (
@@ -25,6 +29,7 @@ from datetime import date
 with open('config/geschaeftstypen.yaml', 'r') as file:
     geschaeftstypen = yaml.safe_load(file)
 
+
 async def get_resp_async(url, session):
     async with session.get(url, headers={"User-Agent": "XY"}) as response:
         resp = await response.read()
@@ -37,6 +42,46 @@ async def get_dok_details_async(link_list):
         results = await asyncio.gather(*tasks)
     return results
 
+class BaseTable(DeclarativeBase):
+    pass
+
+class MemberTable(BaseTable):
+    __tablename__ = 'members'
+
+    memberid: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True, unique=True)
+    memberFirstName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
+    memberLastName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
+
+class FileTable(BaseTable):
+    __tablename__ = 'files'
+
+    fileid: Mapped[str] = mapped_column(String(100), nullable=False, primary_key=True, unique=True)
+    docid: Mapped[str] = mapped_column(String(100), nullable=False)
+    path: Mapped[str] = mapped_column(String(250), nullable=False)
+
+class GeschaeftTable(BaseTable):
+    __tablename__ = 'geschaefte'
+
+    gesid: Mapped[str] = mapped_column(String(50), nullable=False, primary_key=True, unique=True)
+    docs: Mapped[List['DocumentTable']] = relationship(back_populates='ges')
+    memberid: Mapped[int] = mapped_column(Integer, nullable=False)
+    ges_type: Mapped[int] = mapped_column(Integer, nullable=True)
+    ges_status: Mapped[int] = mapped_column(Integer, nullable=True)
+    ges_date: Mapped[str] = mapped_column(String(10), nullable=True)
+    url: Mapped[str] = mapped_column(String(250), nullable=False)
+
+class DocumentTable(BaseTable):
+    __tablename__ = 'documents'
+
+    docid: Mapped[str] = mapped_column(String(10), nullable=False, primary_key=True, unique=True)
+    gesid: Mapped[str] = mapped_column(ForeignKey('geschaefte.gesid'))
+    ges: Mapped['GeschaeftTable'] = relationship(back_populates='docs')
+    doc_type: Mapped[str] = mapped_column(String(50))
+    creator: Mapped[int] = mapped_column(Integer)
+    start_date: Mapped[str] = mapped_column(String(10))
+    status: Mapped[int] = mapped_column(Integer)
+    details: Mapped[str] = mapped_column(String(250))
+    url: Mapped[str] = mapped_column(String(250))
 
 class grossrat:
     def __init__(self, memberid: int):
@@ -79,9 +124,16 @@ class grossrat:
         self.files = pd.DataFrame(columns=list(self.cols_files.keys()))
         self.files = self.files.astype(self.cols_files)
         del self.cols_files
+        self.db_folder = 'db'
         # self.members = pd.DataFrame(columns={'gesid':str, 'memberid': int, 'url': str})
         # self.documents =
         # self.files =
+
+    def create_database(self):
+        Path(self.db_folder).mkdir(parents=True, exist_ok=True)
+        Path(f'{self.db_folder}/grossrat.sqlite3').touch(exist_ok=True)
+        engine = create_engine(f'sqlite:///{self.db_folder}/grossrat.sqlite3')
+        BaseTable.metadata.create_all(engine)
 
     def get_member_page(self):
         self.page_resp = requests.get(
@@ -108,7 +160,7 @@ class grossrat:
         Saves geschaefte to SQLite database
         :return:
         """
-        db_engine = create_engine("sqlite:///db/grossrat.sqlite3")
+        db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
         with db_engine.begin() as connection:
             self.geschaefte.to_sql(
                 name="geschaefte", con=connection, index=False, if_exists="append"
@@ -119,7 +171,7 @@ class grossrat:
         Loads geschaefte from SQLite database
         :return:
         """
-        db_engine = create_engine("sqlite:///db/grossrat.sqlite3")
+        db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
         with db_engine.begin() as connection:
             self.geschaefte = pd.read_sql(
                 "geschaefte",
@@ -243,16 +295,3 @@ class grossrat:
                     ges_uebersicht["Geschäftsnummer"] == ges_nr, key
                 ] = value
             return ges_uebersicht
-
-
-eric = grossrat(15003908)
-eric.get_member_page()
-eric.create_linklist()
-# eric.save_geschaefte()
-eric.load_geschaefte()
-eric.get_dok_details()
-# eric.get_dok_details_from_pickle()
-eric.save_dok_details_to_pickle()
-eric.extract_ges_dok_info_2()
-print("0")
-# eric.extract_ges_dok_info_2()
