@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "grosser-rat-wrapper"
+version = "0.1.0"
+description = ""
+authors = ["networkscientist <71866336+networkscientist@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.32.3"
+pandas = "^2.2.2"
+lxml = "^5.2.2"
+bs4 = "^0.0.2"
+aiohttp = "^3.10.1"
+matplotlib = "^3.9.1.post1"
+pdfrw = "^0.4"
+sqlalchemy = "^2.0.37"
+pyyaml = "^6.0.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
