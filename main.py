@@ -1,215 +1,258 @@
 import asyncio
 import pickle
 from pathlib import Path
-
+import yaml
+import os
 import aiohttp
 import pandas as pd
 import requests
 from lxml.html import fromstring
 from pdfrw import PdfReader, PdfWriter
 
+from sqlalchemy import create_engine
+from datetime import date
+
 # Basics
-dok_nr_total_list, ges_nr_total_list, ges_title_total_list, dok_title_total_list, dok_link_total_list, dok_date_total_list = [
-    [] for _ in range(6)]
+(
+    dok_nr_total_list,
+    ges_nr_total_list,
+    ges_title_total_list,
+    dok_title_total_list,
+    dok_link_total_list,
+    dok_date_total_list,
+) = [[] for _ in range(6)]
 
+with open('config/geschaeftstypen.yaml', 'r') as file:
+    geschaeftstypen = yaml.safe_load(file)
 
-def get_member_page(member_nr):
-    page_resp = requests.get("https://grosserrat.bs.ch/mitglieder/" + member_nr)
-    return page_resp
-
-
-def create_linklist(page_resp):
-    tree = fromstring(page_resp.text)
-    elements = tree.xpath("//*[@id='table_geschaefte']/tbody/tr/td/a")
-    el = tree.xpath("//*[@id='table_geschaefte']/tbody/tr")
-    gsnr_list = [elem.text for elem in elements]
-    link_list = [f'https://grosserrat.bs.ch{elem.attrib["href"]}' for elem in elements]
-    return gsnr_list, link_list
-
-
-async def get_async(url, session):
-    async with session.get_async(url, headers={"User-Agent": "XY"}) as response:
+async def get_resp_async(url, session):
+    async with session.get(url, headers={"User-Agent": "XY"}) as response:
         resp = await response.read()
     return resp
 
 
 async def get_dok_details_async(link_list):
     async with aiohttp.ClientSession() as session:
-        tasks = [get_async(url=url, session=session) for url in link_list]
-        print(*tasks)
+        tasks = [get_resp_async(url=url, session=session) for url in link_list]
         results = await asyncio.gather(*tasks)
     return results
 
 
-def extract_ges_dok_info(ges_html_list):
-    tree = fromstring(ges_html_list[1221])
-    ges_details = tree.xpath("//*[@id='detail_table_geschaeft_resumee']")
-    ges_nr = ges_details[0].getchildren()[0].getchildren()[1].text
-    ges_typ = ges_details[0].getchildren()[1].getchildren()[1].text
-    ges_creator = ges_details[0].getchildren()[2].getchildren()[1].getchildren()[0].text
-    ges_start = ges_details[0].getchildren()[3].getchildren()[1].text
-    ges_status = ges_details[0].getchildren()[4].getchildren()[1].getchildren()[0].getchildren()[
-        0].text.lstrip().rstrip()
-    dok_details = tree.xpath("//*[@id='detail_table_geschaeft_dokumente']")
-    dok_no = tree.xpath("//*[@headers='th_dokno']")
-    dok_nr_list = [dok_no[x].getchildren()[0].text for x in range(len(dok_no))]
-    dok_link_list = [dok_no[x].getchildren()[0].attrib["href"] for x in range(len(dok_no))]
-    dok_date_list = [tree.xpath("//*[@headers='th_datum']")[x].text for x in range(len(dok_no))]
-    dok_title_list = [tree.xpath("//*[@headers='th_titel']")[x].getchildren()[0].text for x in range(len(dok_no))]
+class grossrat:
+    def __init__(self, memberid: int):
+        self.html_list = None
+        self.link_list = None
+        self.gsnr_list = None
+        self.page_resp = None
+        self.memberid = memberid
+        self.cols_geschaefte = {
+            "gesid": str,
+            "memberid": int,
+            "ges_type": int,
+            "ges_status": int,
+            "ges_date": str,
+            "url": str,
+        }
+        self.cols_members = {
+            "memberid": int,
+            "memberFirstName": str,
+            "memberLastName": str,
+        }
+        self.cols_documents = {
+            "docid": str,
+            "gesid": str,
+            "creator": int,
+            "doc_date": str,
+            "details": str,
+            "url": str,
+        }
+        self.cols_files = {"fileid": str, "docid": str, "path": str}
+        self.geschaefte = pd.DataFrame(columns=list(self.cols_geschaefte.keys()))
+        self.geschaefte = self.geschaefte.astype(self.cols_geschaefte)
+        del self.cols_geschaefte
+        self.documents = pd.DataFrame(columns=list(self.cols_documents.keys()))
+        self.documents = self.documents.astype(self.cols_documents)
+        del self.cols_documents
+        self.members = pd.DataFrame(columns=list(self.cols_members.keys()))
+        self.members = self.members.astype(self.cols_members)
+        del self.cols_members
+        self.files = pd.DataFrame(columns=list(self.cols_files.keys()))
+        self.files = self.files.astype(self.cols_files)
+        del self.cols_files
+        # self.members = pd.DataFrame(columns={'gesid':str, 'memberid': int, 'url': str})
+        # self.documents =
+        # self.files =
+
+    def get_member_page(self):
+        self.page_resp = requests.get(
+            "https://grosserrat.bs.ch/mitglieder/" + str(self.memberid)
+        )
+        return self.page_resp
+
+    def create_linklist(self):
+        """
+        Extracts links to geschaefte from member page
+        :return:
+        """
+        tree = fromstring(self.page_resp.text)
+        elements = tree.xpath("//*[@id='table_geschaefte']/tbody/tr")
+        self.geschaefte["ges_date"] = [elem.getchildren()[0].text for elem in elements]
+        self.geschaefte["gesid"] = [elem.getchildren()[1].getchildren()[0].text for elem in elements]
+        self.geschaefte["url"] = [
+            f'https://grosserrat.bs.ch{elem.getchildren()[1].getchildren()[0].attrib["href"]}' for elem in elements
+        ]
+        self.geschaefte["memberid"] = self.memberid
+
+    def save_geschaefte(self):
+        """
+        Saves geschaefte to SQLite database
+        :return:
+        """
+        db_engine = create_engine("sqlite:///db/grossrat.sqlite3")
+        with db_engine.begin() as connection:
+            self.geschaefte.to_sql(
+                name="geschaefte", con=connection, index=False, if_exists="append"
+            )
+
+    def load_geschaefte(self):
+        """
+        Loads geschaefte from SQLite database
+        :return:
+        """
+        db_engine = create_engine("sqlite:///db/grossrat.sqlite3")
+        with db_engine.begin() as connection:
+            self.geschaefte = pd.read_sql(
+                "geschaefte",
+                con=connection,
+                dtype={"gesid": str, "memberid": int, "geschaeftstyp": int, "status": int, "ges_date": str, "url": str},
+            )
+
+    def get_dok_details(self):
+        """
+        Loads the geschaeft detail pages
+        :return:
+        """
+        self.html_list = asyncio.run(get_dok_details_async(self.geschaefte["url"]))
+
+    def save_dok_details_to_pickle(self):
+        """
+        Saves geschaeft detail pages to pickle
+        :return:
+        """
+        with open(Path("dok_detail_list.pkl"), "wb") as f:
+            pickle.dump(self.html_list, f)
+
+    def get_dok_details_from_pickle(self):
+        with open(Path("dok_detail_list.pkl"), "rb") as f:
+            self.html_list = pickle.load(f)
 
 
-def extract_ges_dok_info_2(ges_html_list):
-    i = 0
-    for t in ges_html_list:
-        print(i)
-        tree = fromstring(t)
-        ges_details = tree.xpath("//*[@id='detail_table_geschaeft_resumee']")
-        ges_nr = ges_details[0].getchildren()[0].getchildren()[1].text
-        dok_no = tree.xpath("//*[@headers='th_dokno']")
-        ges_title_total_list.append(tree.xpath("//*[@class='h3 mobile-h4  title']")[0].text)  #Append Geschäftstitel
-        dok_title_list = [tree.xpath("//*[@headers='th_titel']")[x].getchildren()[0].text for x in range(len(dok_no))]
-        if dok_title_list[0]:
-            dok_nr_total_list.extend([dok_no[x].getchildren()[0].text for x in range(len(dok_no))])
-            dok_title_total_list.extend(dok_title_list)
-            dok_link_total_list.extend([dok_no[x].getchildren()[0].attrib["href"] for x in
-                                        range(len(dok_no))])  # Extends dok_link_total_list with dok_link_list
-            dok_date_total_list.extend([tree.xpath("//*[@headers='th_datum']")[x].text for x in
-                                        range(len(dok_no))])  # Extends dok_date_total_list with dok_date_list
-        else:
-            for lst in [dok_nr_total_list, dok_title_total_list, dok_link_total_list, dok_date_total_list]:
-                lst.append(None)
-        i += 1
-    for doknr in dok_nr_total_list:
-        if type(doknr) == str:
-            ges_nr_total_list.append(doknr[:-3])
-        else:
-            ges_nr_total_list.append(doknr)
+    def extract_ges_dok_info_2(self):
+        i = 0
+        for t in self.html_list:
+            tree = fromstring(t)
+            ges_details = tree.xpath("//*[@id='detail_table_geschaeft_resumee']")
+            ges_nr = ges_details[0].getchildren()[0].getchildren()[1].text
+            #%TODO: Hier mit Geschäftstyp weiterfahren
+            dok_no = tree.xpath("//*[@headers='th_dokno']")
+            ges_title_total_list.append(
+                tree.xpath("//*[@class='h3 mobile-h4  title']")[0].text
+            )  # Append Geschäftstitel
+            dok_title_list = [
+                tree.xpath("//*[@headers='th_titel']")[x].getchildren()[0].text
+                for x in range(len(dok_no))
+            ]
+            if dok_title_list[0]:
+                dok_nr_total_list.extend(
+                    [dok_no[x].getchildren()[0].text for x in range(len(dok_no))]
+                )
+                dok_title_total_list.extend(dok_title_list)
+                dok_link_total_list.extend(
+                    [
+                        dok_no[x].getchildren()[0].attrib["href"]
+                        for x in range(len(dok_no))
+                    ]
+                )  # Extends dok_link_total_list with dok_link_list
+                dok_date_total_list.extend(
+                    [
+                        tree.xpath("//*[@headers='th_datum']")[x].text
+                        for x in range(len(dok_no))
+                    ]
+                )  # Extends dok_date_total_list with dok_date_list
+            else:
+                for lst in [
+                    dok_nr_total_list,
+                    dok_title_total_list,
+                    dok_link_total_list,
+                    dok_date_total_list,
+                ]:
+                    lst.append(None)
+            i += 1
+        for doknr in dok_nr_total_list:
+            if type(doknr) == str:
+                ges_nr_total_list.append(doknr[:-3])
+            else:
+                ges_nr_total_list.append(doknr)
+
+    def create_ges_uebersicht(self):
+        ges_uebersicht = pd.DataFrame(
+            data={
+                "Geschäftsnummer": self.geschaefte["gesid"],
+                "Geschäfts-URL": self.geschaefte["url"],
+                "Geschäftstitel": ges_title_total_list,
+            },
+            columns=[
+                "Geschäftsnummer",
+                "Geschäfts-URL",
+                "Geschäftstyp",
+                "Urheber",
+                "Beginn",
+                "Status",
+            ],
+        )
+        for ges_nr, url in zip(
+            ges_uebersicht["Geschäftsnummer"], ges_uebersicht["Geschäfts-URL"]
+        ):
+            page_resp = requests.get(url)
+            tree = fromstring(page_resp.text)
+            ges_detail = tree.xpath("//*[@id='detail_table_geschaeft_resumee']/tr")
+            keylist, valuelist = [], []
+            for elem in ges_detail:
+                child_list = elem.getchildren()
+                if child_list[0].text in ["Geschäftsnummer", "Geschäftstyp", "Beginn"]:
+                    keylist.append(child_list[0].text)
+                    valuelist.append(child_list[1].text)
+                elif elem.getchildren()[1].getchildren()[0].text:
+                    keylist.append(child_list[0].text)
+                    valuelist.append(elem.getchildren()[1].getchildren()[0].text)
+                elif elem.getchildren()[1].getchildren()[0].getchildren()[0].text:
+                    keylist.append(child_list[0].text)
+                    valuelist.append(
+                        elem.getchildren()[1]
+                        .getchildren()[0]
+                        .getchildren()[0]
+                        .text.lstrip()
+                    )
+            ges_dict = {
+                k: v
+                for (k, v) in zip(keylist, valuelist)
+                if k not in ["Geschäftsnummer"]
+            }
+            for key, value in ges_dict.items():
+                ges_uebersicht.loc[
+                    ges_uebersicht["Geschäftsnummer"] == ges_nr, key
+                ] = value
+            return ges_uebersicht
 
 
-def create_doc_details():
-    doc_details_dict = {
-        "Geschäftsnummer": ges_nr_total_list,
-        "Doknummer": dok_nr_total_list,
-        "Titel": dok_title_total_list,
-        "URL": dok_link_total_list,
-        "Datum": dok_date_total_list
-    }
-    doc_details = pd.DataFrame(columns=["Geschäftsnummer", "Doknummer", "Titel", "URL", "Datum"], data=doc_details_dict)
-    doc_details["Datum"] = pd.to_datetime(doc_details["Datum"], format='%d.%m.%Y', errors="coerce")
-    return doc_details
-    #At this point, we have the dataframe with all the pdf links
-
-
-def create_ges_uebersicht():
-    ges_uebersicht = pd.DataFrame(
-        data={"Geschäftsnummer": gsnr_list, "Geschäfts-URL": link_list, "Geschäftstitel": ges_title_total_list},
-        columns=["Geschäftsnummer", "Geschäfts-URL", "Geschäftstyp", "Urheber", "Beginn", "Status"])
-    for ges_nr, url in zip(ges_uebersicht["Geschäftsnummer"], ges_uebersicht["Geschäfts-URL"]):
-        page_resp = requests.get(url)
-        tree = fromstring(page_resp.text)
-        ges_detail = tree.xpath("//*[@id='detail_table_geschaeft_resumee']/tr")
-        keylist, valuelist = [], []
-        for elem in ges_detail:
-            child_list = elem.getchildren()
-            if child_list[0].text in ["Geschäftsnummer", "Geschäftstyp", "Beginn"]:
-                keylist.append(child_list[0].text)
-                valuelist.append(child_list[1].text)
-            elif elem.getchildren()[1].getchildren()[0].text:
-                keylist.append(child_list[0].text)
-                valuelist.append(elem.getchildren()[1].getchildren()[0].text)
-            elif elem.getchildren()[1].getchildren()[0].getchildren()[0].text:
-                keylist.append(child_list[0].text)
-                valuelist.append(elem.getchildren()[1].getchildren()[0].getchildren()[0].text.lstrip())
-        ges_dict = {k: v for (k, v) in zip(keylist, valuelist) if k not in ["Geschäftsnummer"]}
-        for key, value in ges_dict.items():
-            ges_uebersicht.loc[ges_uebersicht["Geschäftsnummer"] == ges_nr, key] = value
-        return ges_uebersicht
-
-
-# ges_uebersicht.to_pickle(Path("/home/me/PycharmProjects/Grosser-Rat-Wrapper/tmp.gz"))
-# ges_uebersicht = pd.read_pickle(Path("/home/me/PycharmProjects/Grosser-Rat-Wrapper/tmp.gz"))
-ges_uebersicht = create_ges_uebersicht()
-ges_uebersicht["Geschäftstitel"] = ges_title_total_list
-
-doc_details = create_doc_details()
-combi = doc_details.set_index("Geschäftsnummer").join(ges_uebersicht.set_index("Geschäftsnummer"))
-# combi.to_pickle(Path("/home/me/PycharmProjects/Grosser-Rat-Wrapper/combi.gz"))
-combi = pd.read_pickle(Path("/home/me/PycharmProjects/Grosser-Rat-Wrapper/combi.gz"))
-#Now we have all that we need to download all the docs
-combi = combi.reset_index().set_index(["Doknummer"], drop=False).dropna(subset="URL")
-
-
-def download_pdf(data):
-    # Do the PDF downloads
-    url = data["URL"]
-    response = requests.get(url)
-    if "Text" in data["Titel"]:
-        folder = "Text"
-    elif data["Titel"] == "Schreiben des RR":
-        folder = "Antwort"
-    else:
-        folder = "Diverses"
-    try:
-        with open(
-                f"/home/me/PycharmProjects/Grosser-Rat-Wrapper/pdfs/{folder}/{data['Doknummer'].replace('.', '_')}.pdf",
-                'wb') as f:
-            f.write(response.content)
-    except AttributeError:
-        print(data["Doknummer"])
-
-
-def tag_pdf(data):
-    if "Text" in data["Titel"]:
-        folder = "Text"
-    elif data["Titel"] == "Schreiben des RR":
-        folder = "Antwort"
-    else:
-        folder = "Diverses"
-    try:
-        trailer = PdfReader(
-            f"/home/me/PycharmProjects/Grosser-Rat-Wrapper/pdfs/{folder}/{data['Doknummer'].replace('.', '_')}.pdf")
-        trailer.Info.Author = "Eric Weber"
-        trailer.Info.Title = data["Geschäftstitel"]
-        trailer.Info.Subject = data["Titel"]
-        trailer.Info.DokNR = data['Doknummer']
-        trailer.Info.Creator = ""
-        trailer.Info.Producer = ""
-        trailer.Info.Keywords = data["Geschäftstyp"]
-        trailer.Info.Date = data.Datum.strftime("%d.%m.%Y")
-        PdfWriter(
-            f"/home/me/PycharmProjects/Grosser-Rat-Wrapper/pdfs/{folder}/{data['Doknummer'].replace('.', '_')}.pdf",
-            trailer=trailer).write()
-    except AttributeError:
-        print(data["Doknummer"])
-        pass
-
-
-# def tag_pdf():
-#     # Add tags to pdf
-#     trailer = PdfReader("/tmp/test.pdf")
-#     trailer.Info.Author = "Eric Weber"
-#     trailer.Info.Title = combi["Geschäftstitel"].iloc[0]
-#     trailer.Info.Subject = combi["Titel"].iloc[0]
-#     trailer.Info.DokNR = combi["Doknummer"].iloc[0]
-#     trailer.Info.Creator = ""
-#     trailer.Info.Producer = ""
-#     trailer.Info.Keywords = combi["Geschäftstyp"].iloc[0]
-#     trailer.Info.Date = combi.Datum.iloc[0].strftime("%d.%m.%Y")
-#     PdfWriter("/tmp/test.pdf", trailer=trailer).write()
-pageResp = get_member_page('15003908')
-gsnrList, linkList = create_linklist(pageResp)
-
-gesHtmlList = asyncio.run(get_dok_details_async(linkList))
-extract_ges_dok_info_2(gesHtmlList)
-# with open(Path("/home/me/PycharmProjects/Grosser-Rat-Wrapper/dok_detail_list.pkl"), "wb") as f:
-#     pickle.dump(ges_html_list, f)
-with open(Path("/home/me/PycharmProjects/Grosser-Rat-Wrapper/dok_detail_list.pkl"), "rb") as f:
-    ges_html_list = pickle.load(f)
-
-for idx, row in combi.iterrows():
-    # print(row)
-    download_pdf(data=row)
-
-for idx, row in combi.iterrows():
-    # print(row)
-    tag_pdf(data=row)
+eric = grossrat(15003908)
+eric.get_member_page()
+eric.create_linklist()
+# eric.save_geschaefte()
+eric.load_geschaefte()
+eric.get_dok_details()
+# eric.get_dok_details_from_pickle()
+eric.save_dok_details_to_pickle()
+eric.extract_ges_dok_info_2()
+print("0")
+# eric.extract_ges_dok_info_2()
