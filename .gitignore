@@ -4,3 +4,7 @@
 *.gz
 *.html
 *.gzip
+db/*
+pdfs/*
+tmp/*
+poetry.lock
