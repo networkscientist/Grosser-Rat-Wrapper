@@ -101,24 +101,26 @@ class GrosserRat:
     def __init__(self):
         pass
     def get_members(self, nur_aktuell=True):
-        if nur_aktuell:
-            members_overview_post_params = {'filter[reiter]':'MIT',
-                          'filter[search]':'',
-                          'filter[section]':'',
-                          'list[mit_limit]':'',
-                          'list[ordering]':'name',
-                          'list[direction]':'ASC',
-                          'template':'MITcards',
-                          'task':'',
-                          'boxchecked':'0',
-                          # 'a7a667e02dee5f6fcbc099b9a31a68ce':'1',
-                          'list[fullordering]':'null+ASC'}
-            members_overview_html = requests.post('https://grosserrat.bs.ch/mitglieder', data=members_overview_post_params).text
-            members_overview_soup = bs(members_overview_html, 'lxml')
-            name_list = [row.get_text() for row in members_overview_soup.find_all('h6', attrs = {'class': 'person-name'})]
-            memberid_list = [int(row.parent.get('data-uni_nr')) for row in members_overview_soup.find_all('div', attrs={'class': 'person'})]
-            self.members_df = pd.DataFrame(data=name_list, index=memberid_list).sort_index()
-            return self.members_df
+        members_overview_post_params = {'filter[reiter]':'MIT',
+                                        'filter[search]':'',
+                                        'filter[section]':'',
+                                        'list[mit_limit]':'',
+                                        'list[ordering]':'name',
+                                        'list[direction]':'ASC',
+                                        'template':'MITcards',
+                                        'task':'',
+                                        'boxchecked':'0',
+                                        # 'a7a667e02dee5f6fcbc099b9a31a68ce':'1',
+                                        'list[fullordering]':'null+ASC'}
+        if nur_aktuell is False:
+            members_overview_post_params = members_overview_post_params | {'filter[such_ehemalige_mit]':'1', 'filter[such_von_mit]': '2005-02-01', 'filter[such_bis_mit]':'2025-03-15'}
+        members_overview_html = requests.post('https://grosserrat.bs.ch/mitglieder', data=members_overview_post_params).text
+        members_overview_soup = bs(members_overview_html, 'lxml')
+        name_list = [row.get_text() for row in members_overview_soup.find_all('h6', attrs = {'class': 'person-name'})]
+        memberid_list = [int(row.parent.get('data-uni_nr')) for row in members_overview_soup.find_all('div', attrs={'class': 'person'})]
+        self.members_df = pd.DataFrame(data={'membername': name_list}, index=memberid_list).sort_index()
+        self.members_df.index.name = 'memberid'
+        return self.members_df
 
 class Grossrat(GrosserRat):
     def __init__(self, memberid: int):
