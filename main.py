@@ -7,11 +7,12 @@ import aiohttp
 import pandas as pd
 import requests
 import yaml
+from bs4 import BeautifulSoup as bs
 from lxml.html import fromstring
 from sqlalchemy import create_engine, Integer, String, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, relationship
 from sqlalchemy.testing.schema import mapped_column
-from bs4 import BeautifulSoup as bs
+
 # Basics
 (
     dok_nr_total_list,
@@ -21,8 +22,6 @@ from bs4 import BeautifulSoup as bs
     dok_link_total_list,
     dok_date_total_list,
 ) = [[] for _ in range(6)]
-
-
 
 
 async def get_resp_async(url, session):
@@ -91,36 +90,54 @@ class DocumentTable(BaseTable):
     ges: Mapped["GeschaeftTable"] = relationship(back_populates="docs")
     doc_type: Mapped[str] = mapped_column(String(50))
     creator: Mapped[int] = mapped_column(Integer)
-    start_date: Mapped[str] = mapped_column(String(10))
-    status: Mapped[int] = mapped_column(Integer)
-    details: Mapped[str] = mapped_column(String(250))
+    doc_date: Mapped[str] = mapped_column(String(10))
     doc_url: Mapped[str] = mapped_column(String(250))
 
 
 class GrosserRat:
     def __init__(self):
         pass
+
     def get_members(self, nur_aktuell=True):
-        members_overview_post_params = {'filter[reiter]':'MIT',
-                                        'filter[search]':'',
-                                        'filter[section]':'',
-                                        'list[mit_limit]':'',
-                                        'list[ordering]':'name',
-                                        'list[direction]':'ASC',
-                                        'template':'MITcards',
-                                        'task':'',
-                                        'boxchecked':'0',
-                                        # 'a7a667e02dee5f6fcbc099b9a31a68ce':'1',
-                                        'list[fullordering]':'null+ASC'}
+        members_overview_post_params = {
+            "filter[reiter]": "MIT",
+            "filter[search]": "",
+            "filter[section]": "",
+            "list[mit_limit]": "",
+            "list[ordering]": "name",
+            "list[direction]": "ASC",
+            "template": "MITcards",
+            "task": "",
+            "boxchecked": "0",
+            # 'a7a667e02dee5f6fcbc099b9a31a68ce':'1',
+            "list[fullordering]": "null+ASC",
+        }
         if nur_aktuell is False:
-            members_overview_post_params = members_overview_post_params | {'filter[such_ehemalige_mit]':'1', 'filter[such_von_mit]': '2005-02-01', 'filter[such_bis_mit]':'2025-03-15'}
-        members_overview_html = requests.post('https://grosserrat.bs.ch/mitglieder', data=members_overview_post_params).text
-        members_overview_soup = bs(members_overview_html, 'lxml')
-        name_list = [row.get_text() for row in members_overview_soup.find_all('h6', attrs = {'class': 'person-name'})]
-        memberid_list = [int(row.parent.get('data-uni_nr')) for row in members_overview_soup.find_all('div', attrs={'class': 'person'})]
-        self.members_df = pd.DataFrame(data={'membername': name_list}, index=memberid_list).sort_index()
-        self.members_df.index.name = 'memberid'
+            members_overview_post_params = members_overview_post_params | {
+                "filter[such_ehemalige_mit]": "1",
+                "filter[such_von_mit]": "2005-02-01",
+                "filter[such_bis_mit]": "2025-03-15",
+            }
+        members_overview_html = requests.post(
+            "https://grosserrat.bs.ch/mitglieder", data=members_overview_post_params
+        ).text
+        members_overview_soup = bs(members_overview_html, "lxml")
+        name_list = [
+            row.get_text()
+            for row in members_overview_soup.find_all(
+                "h6", attrs={"class": "person-name"}
+            )
+        ]
+        memberid_list = [
+            int(row.parent.get("data-uni_nr"))
+            for row in members_overview_soup.find_all("div", attrs={"class": "person"})
+        ]
+        self.members_df = pd.DataFrame(
+            data={"membername": name_list}, index=memberid_list
+        ).sort_index()
+        self.members_df.index.name = "memberid"
         return self.members_df
+
 
 class Grossrat(GrosserRat):
     def __init__(self, memberid: int):
@@ -147,8 +164,8 @@ class Grossrat(GrosserRat):
             "docid": str,
             "gesid": str,
             "creator": int,
+            "doc_type": str,
             "doc_date": str,
-            "details": str,
             "doc_url": str,
         }
         self.cols_files = {"fileid": str, "docid": str, "path": str}
@@ -167,7 +184,10 @@ class Grossrat(GrosserRat):
         self.db_folder = "db"
         with open("config/geschaeftstypen.yaml", "r") as file:
             self.geschaeftstypen_types = yaml.safe_load(file)
-            self.geschaeftstypen = pd.DataFrame(self.geschaeftstypen_types.values(), index=self.geschaeftstypen_types.keys())
+            self.geschaeftstypen = pd.DataFrame(
+                self.geschaeftstypen_types.values(),
+                index=self.geschaeftstypen_types.keys(),
+            )
         # self.members = pd.DataFrame(columns={'gesid':str, 'memberid': int, 'url': str})
         # self.documents =
         # self.files =
@@ -179,10 +199,10 @@ class Grossrat(GrosserRat):
         BaseTable.metadata.create_all(engine)
 
     def get_member_page(self):
-        self.member_page_url = "https://grosserrat.bs.ch/mitglieder/" + str(self.memberid)
-        self.page_resp = requests.get(
-            self.member_page_url
+        self.member_page_url = "https://grosserrat.bs.ch/mitglieder/" + str(
+            self.memberid
         )
+        self.page_resp = requests.get(self.member_page_url)
         return self.page_resp
 
     def create_linklist(self):
@@ -190,22 +210,22 @@ class Grossrat(GrosserRat):
         Extracts links to geschaefte from member page
         :return:
         """
-        first_element_date = lambda x: pd.to_datetime(x[0], format='%d.%m.%Y')
         first_element = lambda x: x[0]
-        self.geschaefte = pd.concat(pd.read_html(self.member_page_url, attrs={'id': 'table_geschaefte'}, extract_links='body', converters={0: first_element, 2: first_element}))
-        self.geschaefte[['gesid', 'ges_url']] = self.geschaefte[1].apply(lambda x: pd.Series(x))
-        self.geschaefte = self.geschaefte.rename(columns={0:'ges_date', 2: 'ges_titel'})[['gesid', 'ges_date', 'ges_titel', 'ges_url']]
-        self.geschaefte = self.geschaefte[['gesid', 'ges_date', 'ges_titel', 'ges_url']]
-        # tree = fromstring(self.page_resp.text)
-        # elements = tree.xpath("//*[@id='table_geschaefte']/tbody/tr")
-        # self.geschaefte["ges_date"] = [elem.getchildren()[0].text for elem in elements]
-        # self.geschaefte["gesid"] = [
-        #     elem.getchildren()[1].getchildren()[0].text for elem in elements
-        # ]
-        # self.geschaefte["url"] = [
-        #     f'https://grosserrat.bs.ch{elem.getchildren()[1].getchildren()[0].attrib["href"]}'
-        #     for elem in elements
-        # ]
+        self.geschaefte = pd.concat(
+            pd.read_html(
+                self.member_page_url,
+                attrs={"id": "table_geschaefte"},
+                extract_links="body",
+                converters={0: first_element, 2: first_element},
+            )
+        )
+        self.geschaefte[["gesid", "ges_url"]] = self.geschaefte[1].apply(
+            lambda x: pd.Series(x)
+        )
+        self.geschaefte = self.geschaefte.rename(
+            columns={0: "ges_date", 2: "ges_titel"}
+        )[["gesid", "ges_date", "ges_titel", "ges_url"]]
+        self.geschaefte = self.geschaefte[["gesid", "ges_date", "ges_titel", "ges_url"]]
         self.geschaefte["memberid"] = self.memberid
 
     def save_geschaefte(self):
@@ -215,7 +235,11 @@ class Grossrat(GrosserRat):
         """
         db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
         self.geschaefte.to_sql(
-            name="geschaefte", con=db_engine, index=False, if_exists="replace", chunksize=1000
+            name="geschaefte",
+            con=db_engine,
+            index=False,
+            if_exists="replace",
+            chunksize=1000,
         )
 
     def load_geschaefte(self):
@@ -238,12 +262,50 @@ class Grossrat(GrosserRat):
                 },
             )
 
+    def save_documents(self):
+        """
+        Saves documents to SQLite database
+        :return:
+        """
+        db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
+        self.documents.to_sql(
+            name="documents",
+            con=db_engine,
+            index=False,
+            if_exists="replace",
+            chunksize=1000,
+        )
+
+    def load_documents(self):
+        """
+        Loads documents from SQLite database
+        :return:
+        """
+        db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
+        with db_engine.begin() as connection:
+            self.documents = pd.read_sql(
+                "documents",
+                con=connection,
+                dtype={
+                    "docid": str,
+                    "gesid": str,
+                    "creator": str,
+                    "doc_type": str,
+                    "doc_date": str,
+                    "doc_url": str,
+                },
+            )
+
     def get_dok_details(self):
         """
         Loads the geschaeft detail pages
         :return:
         """
-        self.html_list = asyncio.run(get_dok_details_async('https://grosserrat.bs.ch/' + self.geschaefte["ges_url"]))
+        self.html_list = asyncio.run(
+            get_dok_details_async(
+                "https://grosserrat.bs.ch/" + self.geschaefte["ges_url"]
+            )
+        )
 
     def save_dok_details_to_pickle(self):
         """
@@ -257,67 +319,62 @@ class Grossrat(GrosserRat):
         with open(Path("dok_detail_list.pkl"), "rb") as f:
             self.html_list = pickle.load(f)
 
-    def extract_ges_dok_info_2(self):
-        self.ges_details_list = [pd.read_html(pd_from_html, attrs={'id': 'detail_table_geschaeft_resumee'})[0].T.iloc[1] for pd_from_html in self.html_list]
-        self.ges_details = pd.concat(self.ges_details_list, axis=1).transpose().rename(columns={0: 'gesid', 1: 'ges_type', 4: 'ges_status'})
-        self.geschaefte[['ges_type', 'ges_status']] = pd.merge(self.geschaefte[['gesid']], self.ges_details[['gesid', 'ges_type', 'ges_status']], on='gesid', how='left')[['ges_type', 'ges_status']]
-        del self.ges_details_list
-        del self.ges_details
-        self.geschaefte['ges_type'] = self.geschaefte['ges_type'].replace(
-            {value: int(key) for key, value in zip(self.geschaeftstypen.index.tolist(), self.geschaeftstypen[0].values.tolist())}).fillna(99)
-        self.geschaefte['ges_type'] = self.geschaefte['ges_type'].astype(int)
-        # first_element = lambda x: x[0]
-        # docs = [pd.read_html(pd_from_html, attrs={'id': 'detail_table_geschaeft_dokumente'}, extract_links='all')[0].T.iloc[1] for pd_from_html in self.html_list]
-        # docs = pd.read_html(self.html_list[0], attrs={'id': 'detail_table_geschaeft_dokumente'}, extract_links='body', header=0, converters={'Nummer': first_element, 'Datum': first_element})[0]
-        # docs[['doc_title', 'doc_url']] = docs['Titel'].apply(lambda x: pd.Series(x))
-        #
-        # ges_details.columns = ges_details.iloc[0]
-        # ges_details = ges_details.drop()
-        # i = 0
-        # for t in self.html_list:
-        #     tree = fromstring(t)
-        #     ges_details = tree.xpath("//*[@id='detail_table_geschaeft_resumee']")
-        #     ges_nr = ges_details[0].getchildren()[0].getchildren()[1].text
-        #     # %TODO: Hier mit Geschäftstyp weiterfahren
-        #     dok_no = tree.xpath("//*[@headers='th_dokno']")
-        #     ges_title_total_list.append(
-        #         tree.xpath("//*[@class='h3 mobile-h4  title']")[0].text
-        #     )  # Append Geschäftstitel
-        #     dok_title_list = [
-        #         tree.xpath("//*[@headers='th_titel']")[x].getchildren()[0].text
-        #         for x in range(len(dok_no))
-        #     ]
-        #     if dok_title_list[0]:
-        #         dok_nr_total_list.extend(
-        #             [dok_no[x].getchildren()[0].text for x in range(len(dok_no))]
-        #         )
-        #         dok_title_total_list.extend(dok_title_list)
-        #         dok_link_total_list.extend(
-        #             [
-        #                 dok_no[x].getchildren()[0].attrib["href"]
-        #                 for x in range(len(dok_no))
-        #             ]
-        #         )  # Extends dok_link_total_list with dok_link_list
-        #         dok_date_total_list.extend(
-        #             [
-        #                 tree.xpath("//*[@headers='th_datum']")[x].text
-        #                 for x in range(len(dok_no))
-        #             ]
-        #         )  # Extends dok_date_total_list with dok_date_list
-        #     else:
-        #         for lst in [
-        #             dok_nr_total_list,
-        #             dok_title_total_list,
-        #             dok_link_total_list,
-        #             dok_date_total_list,
-        #         ]:
-        #             lst.append(None)
-        #     i += 1
-        # for doknr in dok_nr_total_list:
-        #     if type(doknr) is str:
-        #         ges_nr_total_list.append(doknr[:-3])
-        #     else:
-        #         ges_nr_total_list.append(doknr)
+    def extract_doc_details(self):
+        extract_value = lambda x: x[0]
+        extract_link = lambda x: x[1]
+        # self.geschaefte = pd.concat(pd.read_html(self.member_page_url, attrs={'id': 'table_geschaefte'}, extract_links='body', converters={0: extract_value, 2: extract_value}))
+        ges_details_list = [
+            pd.read_html(pd_from_html, attrs={"id": "detail_table_geschaeft_resumee"})[
+                0
+            ].T.iloc[1]
+            for pd_from_html in self.html_list
+        ]
+        ges_details = (
+            pd.concat(ges_details_list, axis=1)
+            .transpose()
+            .rename(columns={0: "gesid", 1: "ges_type", 4: "ges_status"})
+        )
+        self.geschaefte[["ges_type", "ges_status"]] = pd.merge(
+            self.geschaefte[["gesid"]],
+            ges_details[["gesid", "ges_type", "ges_status"]],
+            on="gesid",
+            how="left",
+        )[["ges_type", "ges_status"]]
+        self.geschaefte["ges_type"] = (
+            self.geschaefte["ges_type"]
+            .replace(
+                {
+                    value: int(key)
+                    for key, value in zip(
+                        self.geschaeftstypen.index.tolist(),
+                        self.geschaeftstypen[0].values.tolist(),
+                    )
+                }
+            )
+            .fillna(99)
+        )
+        self.geschaefte["ges_type"] = self.geschaefte["ges_type"].astype(int)
+        dok_link_list = [
+            pd.read_html(
+                pd_from_html,
+                attrs={"id": "detail_table_geschaeft_dokumente"},
+                extract_links="body",
+                converters={0: extract_value, 1: extract_value},
+            )[0]
+            for pd_from_html in self.html_list
+        ]
+        dok_details = pd.concat(dok_link_list, axis=0).rename(
+            columns={"Nummer": "docid", "Datum": "doc_date", "Titel": "doc_type"}
+        )
+        dok_details.index = pd.RangeIndex(0, len(dok_details))
+        dok_details[["doc_type", "doc_url"]] = pd.DataFrame(
+            dok_details["doc_type"].tolist()
+        )
+        dok_details["gesid"] = dok_details.docid.str.extract(pat=r"^(\d+\.\d+)")
+        dok_details["creator"] = self.memberid
+        self.documents[
+            ["docid", "doc_date", "doc_type", "doc_url", "gesid", "creator"]
+        ] = pd.merge(self.documents[["docid"]], dok_details, how="right", on="docid")
 
     def create_ges_uebersicht(self):
         ges_uebersicht = pd.DataFrame(
@@ -364,7 +421,7 @@ class Grossrat(GrosserRat):
                 if k not in ["Geschäftsnummer"]
             }
             for key, value in ges_dict.items():
-                ges_uebersicht.loc[
-                    ges_uebersicht["Geschäftsnummer"] == ges_nr, key
-                ] = value
+                ges_uebersicht.loc[ges_uebersicht["Geschäftsnummer"] == ges_nr, key] = (
+                    value
+                )
             return ges_uebersicht
