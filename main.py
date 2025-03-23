@@ -417,7 +417,8 @@ class Grossrat(GrosserRat):
             self.html_list = pickle.load(f)
 
     def extract_doc_details(self):
-        extract_value = lambda x: x[0]
+        def extract_value(x):
+            return x[0]
         ges_details_list = [
             pd.read_html(pd_from_html, attrs={"id": "detail_table_geschaeft_resumee"})[
                 0
