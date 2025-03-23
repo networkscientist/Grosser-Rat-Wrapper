@@ -310,6 +310,7 @@ class Grossrat(GrosserRat):
         Saves documents to SQLite database
         :return:
         """
+        self.manually_correct_documents()
         db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
         self.documents.to_sql(
             name="documents",
@@ -319,6 +320,62 @@ class Grossrat(GrosserRat):
             chunksize=1000,
         )
 
+    def manually_correct_documents(self):
+        self.documents.loc[self.documents.doc_url == 'https://grosserrat.bs.ch/dokumente/100404/000000404382.pdf', 'gesid'] = '23.5153'
+        self.documents.loc[self.documents.doc_url == 'https://grosserrat.bs.ch/dokumente/100404/000000404382.pdf', "docid"] = "23.5153.01"
+        self.documents.loc[
+            self.documents.doc_url
+            == "https://grosserrat.bs.ch/dokumente/100397/000000397037.pdf",
+            "docid",
+        ] = '22.5212.01'
+        self.documents.loc[
+            self.documents.gesid
+            == "21.1562",
+            "docid",
+        ] = '21.5562.02'
+        self.documents.loc[
+            self.documents.gesid
+            == "21.1562",
+            "gesid",
+        ] = '21.5562'
+        self.documents.loc[
+            self.documents.gesid
+            == "15.4090",
+            "gesid",
+        ] = '15.5090'
+        self.documents.loc[
+            self.documents.docid
+            == "15.4090.02",
+            "docid",
+        ] = '15.5090.02'
+        self.documents.loc[
+            self.documents.docid
+            == "14.5404.01",
+            "docid",
+        ] = '14.5304.01'
+        self.documents.loc[
+            self.documents.gesid
+            == "14.5404",
+            "gesid",
+        ] = '14.5304'
+        self.geschaefte.loc[
+            self.geschaefte.gesid
+            == "14.5404",
+            "gesid",
+        ] = '14.5304'
+        self.documents.loc[
+            self.documents.docid
+            == "14.5403.02",
+            "docid",
+        ] = '14.5303.02'
+        self.documents.loc[
+            self.documents.gesid
+            == "14.5403",
+            "gesid",
+        ] = '14.5303'
+
+    # "14.5404
+    # "14.5403"
     def load_documents(self):
         """
         Loads documents from SQLite database
