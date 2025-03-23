@@ -210,7 +210,8 @@ class Grossrat(GrosserRat):
         Extracts links to geschaefte from member page
         :return:
         """
-        first_element = lambda x: x[0]
+        def first_element(x):
+            return x[0]
         self.geschaefte = pd.concat(
             pd.read_html(
                 self.member_page_url,
