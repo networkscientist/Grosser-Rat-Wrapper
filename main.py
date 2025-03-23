@@ -230,9 +230,6 @@ class Grossrat(GrosserRat):
                 geschaeftstypen_types.values(),
                 index=geschaeftstypen_types.keys(),
             )
-        # self.members = pd.DataFrame(columns={'gesid':str, 'memberid': int, 'url': str})
-        # self.documents =
-        # self.files =
 
     def create_database(self):
         Path(self.db_folder).mkdir(parents=True, exist_ok=True)
@@ -421,8 +418,6 @@ class Grossrat(GrosserRat):
 
     def extract_doc_details(self):
         extract_value = lambda x: x[0]
-        extract_link = lambda x: x[1]
-        # self.geschaefte = pd.concat(pd.read_html(self.member_page_url, attrs={'id': 'table_geschaefte'}, extract_links='body', converters={0: extract_value, 2: extract_value}))
         ges_details_list = [
             pd.read_html(pd_from_html, attrs={"id": "detail_table_geschaeft_resumee"})[
                 0
