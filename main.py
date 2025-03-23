@@ -1,5 +1,7 @@
 import asyncio
+import io
 import pickle
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -8,8 +10,8 @@ import pandas as pd
 import requests
 import yaml
 from bs4 import BeautifulSoup as bs
-from lxml.html import fromstring
-from sqlalchemy import create_engine, Integer, String, ForeignKey
+from pypdf import PdfReader, PdfWriter
+from sqlalchemy import ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, relationship
 from sqlalchemy.testing.schema import mapped_column
 
@@ -25,14 +27,18 @@ from sqlalchemy.testing.schema import mapped_column
 
 
 async def get_resp_async(url, session):
-    async with session.get(url, headers={"User-Agent": "XY"}) as response:
+    async with session.get(url, headers={"User-Agent": "XY"}, timeout=30) as response:
         resp = await response.read()
     return resp
 
-
+sem = asyncio.Semaphore(3)
+async def safe_download(url, session):
+    async with sem:  # semaphore limits num of simultaneous downloads
+        return await get_resp_async(url, session)
+    
 async def get_dok_details_async(link_list):
-    async with aiohttp.ClientSession() as session:
-        tasks = [get_resp_async(url=url, session=session) for url in link_list]
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(30)) as session:
+        tasks = [safe_download(url=url, session=session) for url in link_list]
         results = await asyncio.gather(*tasks)
     return results
 
@@ -377,52 +383,34 @@ class Grossrat(GrosserRat):
             ["docid", "doc_date", "doc_type", "doc_url", "gesid", "creator"]
         ] = pd.merge(self.documents[["docid"]], dok_details, how="right", on="docid")
 
-    def create_ges_uebersicht(self):
-        ges_uebersicht = pd.DataFrame(
-            data={
-                "Geschäftsnummer": self.geschaefte["gesid"],
-                "Geschäfts-URL": self.geschaefte["url"],
-                "Geschäftstitel": ges_title_total_list,
-            },
-            columns=[
-                "Geschäftsnummer",
-                "Geschäfts-URL",
-                "Geschäftstyp",
-                "Urheber",
-                "Beginn",
-                "Status",
-            ],
-        )
-        for ges_nr, url in zip(
-            ges_uebersicht["Geschäftsnummer"], ges_uebersicht["Geschäfts-URL"]
-        ):
-            page_resp = requests.get(url)
-            tree = fromstring(page_resp.text)
-            ges_detail = tree.xpath("//*[@id='detail_table_geschaeft_resumee']/tr")
-            keylist, valuelist = [], []
-            for elem in ges_detail:
-                child_list = elem.getchildren()
-                if child_list[0].text in ["Geschäftsnummer", "Geschäftstyp", "Beginn"]:
-                    keylist.append(child_list[0].text)
-                    valuelist.append(child_list[1].text)
-                elif elem.getchildren()[1].getchildren()[0].text:
-                    keylist.append(child_list[0].text)
-                    valuelist.append(elem.getchildren()[1].getchildren()[0].text)
-                elif elem.getchildren()[1].getchildren()[0].getchildren()[0].text:
-                    keylist.append(child_list[0].text)
-                    valuelist.append(
-                        elem.getchildren()[1]
-                        .getchildren()[0]
-                        .getchildren()[0]
-                        .text.lstrip()
-                    )
-            ges_dict = {
-                k: v
-                for (k, v) in zip(keylist, valuelist)
-                if k not in ["Geschäftsnummer"]
-            }
-            for key, value in ges_dict.items():
-                ges_uebersicht.loc[ges_uebersicht["Geschäftsnummer"] == ges_nr, key] = (
-                    value
+    def download_pdfs(self):
+        docid_counts = self.documents.docid.value_counts()
+        for doc in self.documents.loc[self.documents.docid.isin(docid_counts.loc[docid_counts ==1].index.tolist()), 'docid']:
+            re = requests.get(self.documents.set_index('docid').at[doc,'doc_url'])
+            pdf_file = io.BytesIO(re.content)
+            reader = PdfReader(
+                pdf_file
+            )
+            writer = PdfWriter(reader)
+            if "Text" in self.documents.set_index('docid').at[doc,'doc_type']:
+                folder = "Text"
+            elif self.documents.set_index('docid').at[doc,'doc_type'] == "Schreiben des RR":
+                folder = "Antwort"
+            else:
+                folder = "Diverses"
+            with open(f'pdfs/{folder}/{doc.replace(".", "_")}.pdf', 'wb') as newfile:
+                # Autor taken from superclass's member_df
+                writer.add_metadata(
+                    {
+                        "/Author": self.members_df.at[self.memberid,'membername'],
+                        "/Title": self.geschaefte.set_index('gesid').at[self.documents.set_index('docid').at[doc, 'gesid'], 'ges_titel'],
+                        "/Subject": self.geschaeftstypen.at[self.geschaefte.set_index('gesid').at[self.documents.set_index('docid').at[doc, 'gesid'],'ges_type'],0],
+                        "/Keywords": "Keywords",
+                        "/CreationDate": self.documents.set_index('docid').at[doc,'doc_date'],
+                        "/ModDate": datetime.today().strftime('%d.%m.%Y'),
+                        "/Creator": self.members_df.at[self.memberid, 'membername'],
+                        "/GeschaeftsId": self.documents.set_index('docid').at[doc,'gesid'],
+                        "/DokumentId": doc,
+                    }
                 )
-            return ges_uebersicht
+                writer.write(newfile)
