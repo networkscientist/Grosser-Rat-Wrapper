@@ -225,10 +225,10 @@ class Grossrat(GrosserRat):
         del self.cols_files
         self.db_folder = "db"
         with open("config/geschaeftstypen.yaml", "r") as file:
-            self.geschaeftstypen_types = yaml.safe_load(file)
+            geschaeftstypen_types = yaml.safe_load(file)
             self.geschaeftstypen = pd.DataFrame(
-                self.geschaeftstypen_types.values(),
-                index=self.geschaeftstypen_types.keys(),
+                geschaeftstypen_types.values(),
+                index=geschaeftstypen_types.keys(),
             )
         # self.members = pd.DataFrame(columns={'gesid':str, 'memberid': int, 'url': str})
         # self.documents =
