@@ -31,11 +31,15 @@ async def get_resp_async(url, session):
         resp = await response.read()
     return resp
 
+
 sem = asyncio.Semaphore(3)
+
+
 async def safe_download(url, session):
     async with sem:  # semaphore limits num of simultaneous downloads
         return await get_resp_async(url, session)
-    
+
+
 async def get_dok_details_async(link_list):
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(30)) as session:
         tasks = [safe_download(url=url, session=session) for url in link_list]
@@ -138,6 +142,8 @@ class GrosserRat:
             data={"membername": name_list}, index=memberid_list
         ).sort_index()
         self.members_df.index.name = "memberid"
+        # %TODO: implement scraping member infos from member pages
+        # %TODO: implement function to save members to db
 
     def get_members(self, nur_aktuell=True):
         members_overview_post_params = {
@@ -188,7 +194,7 @@ class Grossrat(GrosserRat):
         self.gsnr_list = None
         self.page_resp = None
         self.memberid = memberid
-        self.member_name = self.members_df.at[self.members_df.memberid == self.memberid, 'membername']
+        self.member_name = self.members_df.loc[self.memberid, "membername"]
         self.cols_geschaefte = {
             "gesid": str,
             "memberid": int,
@@ -249,8 +255,10 @@ class Grossrat(GrosserRat):
         Extracts links to geschaefte from member page
         :return:
         """
+
         def first_element(x):
             return x[0]
+
         self.geschaefte = pd.concat(
             pd.read_html(
                 self.member_page_url,
@@ -318,61 +326,59 @@ class Grossrat(GrosserRat):
         )
 
     def manually_correct_documents(self):
-        self.documents.loc[self.documents.doc_url == 'https://grosserrat.bs.ch/dokumente/100404/000000404382.pdf', 'gesid'] = '23.5153'
-        self.documents.loc[self.documents.doc_url == 'https://grosserrat.bs.ch/dokumente/100404/000000404382.pdf', "docid"] = "23.5153.01"
+        self.documents.loc[
+            self.documents.doc_url
+            == "https://grosserrat.bs.ch/dokumente/100404/000000404382.pdf",
+            "gesid",
+        ] = "23.5153"
+        self.documents.loc[
+            self.documents.doc_url
+            == "https://grosserrat.bs.ch/dokumente/100404/000000404382.pdf",
+            "docid",
+        ] = "23.5153.01"
         self.documents.loc[
             self.documents.doc_url
             == "https://grosserrat.bs.ch/dokumente/100397/000000397037.pdf",
             "docid",
-        ] = '22.5212.01'
+        ] = "22.5212.01"
         self.documents.loc[
-            self.documents.gesid
-            == "21.1562",
+            self.documents.gesid == "21.1562",
             "docid",
-        ] = '21.5562.02'
+        ] = "21.5562.02"
         self.documents.loc[
-            self.documents.gesid
-            == "21.1562",
+            self.documents.gesid == "21.1562",
             "gesid",
-        ] = '21.5562'
+        ] = "21.5562"
         self.documents.loc[
-            self.documents.gesid
-            == "15.4090",
+            self.documents.gesid == "15.4090",
             "gesid",
-        ] = '15.5090'
+        ] = "15.5090"
         self.documents.loc[
-            self.documents.docid
-            == "15.4090.02",
+            self.documents.docid == "15.4090.02",
             "docid",
-        ] = '15.5090.02'
+        ] = "15.5090.02"
         self.documents.loc[
-            self.documents.docid
-            == "14.5404.01",
+            self.documents.docid == "14.5404.01",
             "docid",
-        ] = '14.5304.01'
+        ] = "14.5304.01"
         self.documents.loc[
-            self.documents.gesid
-            == "14.5404",
+            self.documents.gesid == "14.5404",
             "gesid",
-        ] = '14.5304'
+        ] = "14.5304"
         self.geschaefte.loc[
-            self.geschaefte.gesid
-            == "14.5404",
+            self.geschaefte.gesid == "14.5404",
             "gesid",
-        ] = '14.5304'
+        ] = "14.5304"
         self.documents.loc[
-            self.documents.docid
-            == "14.5403.02",
+            self.documents.docid == "14.5403.02",
             "docid",
-        ] = '14.5303.02'
+        ] = "14.5303.02"
         self.documents.loc[
-            self.documents.gesid
-            == "14.5403",
+            self.documents.gesid == "14.5403",
             "gesid",
-        ] = '14.5303'
+        ] = "14.5303"
+        # %TODO: 14.5303.02 kreiert immer noch Probleme: An error occurred: No connection adapters were found for 'docid\n14.5303.02    https://grosserrat.bs.ch/dokumente/100378/0000...\n14.5303.02    https://grosserrat.bs.ch/dokumente/100378/0000...\nName: doc_url, dtype: object'
 
-    # "14.5404
-    # "14.5403"
     def load_documents(self):
         """
         Loads documents from SQLite database
@@ -419,6 +425,7 @@ class Grossrat(GrosserRat):
     def extract_doc_details(self):
         def extract_value(x):
             return x[0]
+
         ges_details_list = [
             pd.read_html(pd_from_html, attrs={"id": "detail_table_geschaeft_resumee"})[
                 0
@@ -474,32 +481,60 @@ class Grossrat(GrosserRat):
 
     def download_pdfs(self):
         docid_counts = self.documents.docid.value_counts()
-        for doc in self.documents.loc[self.documents.docid.isin(docid_counts.loc[docid_counts ==1].index.tolist()), 'docid']:
-            re = requests.get(self.documents.set_index('docid').at[doc,'doc_url'])
-            pdf_file = io.BytesIO(re.content)
-            reader = PdfReader(
-                pdf_file
-            )
-            writer = PdfWriter(reader)
-            if "Text" in self.documents.set_index('docid').at[doc,'doc_type']:
-                folder = "Text"
-            elif self.documents.set_index('docid').at[doc,'doc_type'] == "Schreiben des RR":
-                folder = "Antwort"
-            else:
-                folder = "Diverses"
-            with open(f'pdfs/{folder}/{doc.replace(".", "_")}.pdf', 'wb') as newfile:
-                # Autor taken from superclass's member_df
-                writer.add_metadata(
-                    {
-                        "/Author": self.members_df.at[self.memberid,'membername'],
-                        "/Title": self.geschaefte.set_index('gesid').at[self.documents.set_index('docid').at[doc, 'gesid'], 'ges_titel'],
-                        "/Subject": self.geschaeftstypen.at[self.geschaefte.set_index('gesid').at[self.documents.set_index('docid').at[doc, 'gesid'],'ges_type'],0],
-                        "/Keywords": "Keywords",
-                        "/CreationDate": self.documents.set_index('docid').at[doc,'doc_date'],
-                        "/ModDate": datetime.today().strftime('%d.%m.%Y'),
-                        "/Creator": self.members_df.at[self.memberid, 'membername'],
-                        "/GeschaeftsId": self.documents.set_index('docid').at[doc,'gesid'],
-                        "/DokumentId": doc,
-                    }
+        self.manually_correct_documents()
+        for doc in self.documents.loc[
+            self.documents.docid.isin(
+                docid_counts.loc[docid_counts == 1].index.tolist()
+            ),
+            "docid",
+        ]:
+            try:
+                re = requests.get(self.documents.set_index("docid").at[doc, "doc_url"])
+                pdf_file = io.BytesIO(re.content)
+                reader = PdfReader(pdf_file)
+                writer = PdfWriter(reader)
+                if "Text" in self.documents.set_index("docid").at[doc, "doc_type"]:
+                    folder = "Text"
+                elif (
+                    self.documents.set_index("docid").at[doc, "doc_type"]
+                    == "Schreiben des RR"
+                ):
+                    folder = "Antwort"
+                else:
+                    folder = "Diverses"
+                with open(
+                    f"pdfs/{folder}/{doc.replace('.', '_')}.pdf", "wb"
+                ) as newfile:
+                    # Autor taken from superclass's member_df
+                    writer.add_metadata(
+                        {
+                            "/Author": self.members_df.at[self.memberid, "membername"],
+                            "/Title": self.geschaefte.set_index("gesid").at[
+                                self.documents.set_index("docid").at[doc, "gesid"],
+                                "ges_titel",
+                            ],
+                            "/Subject": self.geschaeftstypen.at[
+                                self.geschaefte.set_index("gesid").at[
+                                    self.documents.set_index("docid").at[doc, "gesid"],
+                                    "ges_type",
+                                ],
+                                0,
+                            ],
+                            "/Keywords": "Keywords",
+                            "/CreationDate": self.documents.set_index("docid").at[
+                                doc, "doc_date"
+                            ],
+                            "/ModDate": datetime.today().strftime("%d.%m.%Y"),
+                            "/Creator": self.members_df.at[self.memberid, "membername"],
+                            "/GeschaeftsId": self.documents.set_index("docid").at[
+                                doc, "gesid"
+                            ],
+                            "/DokumentId": doc,
+                        }
+                    )
+                    writer.write(newfile)
+            except Exception as e:
+                print("An error occurred:", e)
+                print(
+                    f"Doc-Url: {self.documents.set_index('docid').at[doc, 'doc_url']}"
                 )
-                writer.write(newfile)
