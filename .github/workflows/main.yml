@@ -4,10 +4,6 @@ on:
     - docs
   workflow_dispatch:
 jobs:
-  my_job:
-    name: build-docs
-    runs-on: ubuntu-22.04
-    jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
