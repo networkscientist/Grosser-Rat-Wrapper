@@ -20,7 +20,7 @@ jobs:
     #- uses: ammaraskar/sphinx-action@master
      # with:
     ##    build-command: "sphinx-build -b html . _build"
-        docs-folder: "docs/"
+    #    docs-folder: "docs/"
     # Grabbing custom dependencies and building as a pdf.
    # - uses: ammaraskar/sphinx-action@master
     #  with:
@@ -35,6 +35,6 @@ jobs:
      #   path: docs/_build/html/
     # Create an artifact out of the previously built pdf.
     #- uses: actions/upload-artifact@v1
-      with:
-        name: Documentation
-        path: docs/_build/latex/pdfexample.pdf
+    #  with:
+    #    name: Documentation
+     #   path: docs/_build/latex/pdfexample.pdf
