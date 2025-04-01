@@ -1,8 +1,7 @@
-on:
-  push:
-    branches: 
-    - docs
-  workflow_dispatch:
+name: "Pull Request Docs Check"
+on: 
+- pull_request
+
 jobs:
   docs:
     runs-on: ubuntu-latest
