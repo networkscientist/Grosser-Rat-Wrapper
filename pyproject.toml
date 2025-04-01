@@ -1,24 +1,48 @@
-[tool.poetry]
-name = "grosser-rat-wrapper"
-version = "0.1.0"
-description = ""
-authors = ["networkscientist <71866336+networkscientist@users.noreply.github.com>"]
-readme = "README.md"
+[project]
+name = "grosserratwrapper"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-requests = "^2.32.3"
-pandas = "^2.2.2"
-lxml = "^5.2.2"
-bs4 = "^0.0.2"
-aiohttp = "^3.10.1"
-matplotlib = "^3.9.1.post1"
-pdfrw = "^0.4"
-sqlalchemy = "^2.0.37"
-pyyaml = "^6.0.2"
-ruff = "^0.9.7"
-html5lib = "^1.1"
-pypdf = "^5.4.0"
+dynamic = [
+    "classifiers",
+    "version", # set version dynamically with poetry build --local-version
+]
+description = "Python Wrapper to interact with the public API if the Basel-Stadt parliament, the Grosser Rat"
+license = { text = " CC BY-NC-SA 4.0"}
+readme = "README.md"
+authors = [
+    { name = "Peter Zweifel", email = "71866336+networkscientist@users.noreply.github.com"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Natural Language :: German",
+    "Programming Language :: Python :: 3.10"
+]
+keywords = [
+    "Wrapper",
+    "API",
+    "Basel",
+]
+dependencies = [
+    "requests>=2.32.3",
+    "pandas>=2.2.2",
+    "lxml>=5.2.2",
+    "bs4>=0.0.2",
+    "aiohttp>=3.10.1",
+    "matplotlib>=3.9.1.post1",
+    "pdfrw>=0.4",
+    "sqlalchemy>=2.0.37",
+    "pyyaml>=6.0.2",
+    "ruff>=0.9.7",
+    "html5lib>=1.1",
+    "pypdf>=5.4.0",
+]
+
+[project.urls]
+repository = "https://github.com/networkscientist/Grosser-Rat-Wrapper"
+
+[tool.poetry]
+version = "0.0.1.alpha1" # base version
 
 
 [build-system]

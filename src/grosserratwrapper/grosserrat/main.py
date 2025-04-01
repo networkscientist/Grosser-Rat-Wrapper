@@ -230,7 +230,7 @@ class Grossrat(GrosserRat):
         self.files = self.files.astype(self.cols_files)
         del self.cols_files
         self.db_folder = "db"
-        with open("config/geschaeftstypen.yaml", "r") as file:
+        with open("../../../config/geschaeftstypen.yaml", "r") as file:
             geschaeftstypen_types = yaml.safe_load(file)
             self.geschaeftstypen = pd.DataFrame(
                 geschaeftstypen_types.values(),
@@ -415,11 +415,11 @@ class Grossrat(GrosserRat):
         Saves geschaeft detail pages to pickle
         :return:
         """
-        with open(Path("dok_detail_list.pkl"), "wb") as f:
+        with open(Path("../../../dok_detail_list.pkl"), "wb") as f:
             pickle.dump(self.html_list, f)
 
     def get_dok_details_from_pickle(self):
-        with open(Path("dok_detail_list.pkl"), "rb") as f:
+        with open(Path("../../../dok_detail_list.pkl"), "rb") as f:
             self.html_list = pickle.load(f)
 
     def extract_doc_details(self):
