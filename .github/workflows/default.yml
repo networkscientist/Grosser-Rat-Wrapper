@@ -17,9 +17,9 @@ jobs:
       with:
         docs-folder: "docs/"
     # Example of using a custom build-command.
-    - uses: ammaraskar/sphinx-action@master
-      with:
-        build-command: "sphinx-build -b html . _build"
+    #- uses: ammaraskar/sphinx-action@master
+     # with:
+    ##    build-command: "sphinx-build -b html . _build"
         docs-folder: "docs/"
     # Grabbing custom dependencies and building as a pdf.
    # - uses: ammaraskar/sphinx-action@master
