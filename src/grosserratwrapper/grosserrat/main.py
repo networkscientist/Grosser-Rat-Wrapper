@@ -5,10 +5,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
+from ..config import geschaeftstypen
+
 import aiohttp
 import pandas as pd
 import requests
-import yaml
 from bs4 import BeautifulSoup as bs
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import ForeignKey, Integer, String, create_engine
@@ -230,12 +231,10 @@ class Grossrat(GrosserRat):
         self.files = self.files.astype(self.cols_files)
         del self.cols_files
         self.db_folder = "db"
-        with open("../../../config/geschaeftstypen.yaml", "r") as file:
-            geschaeftstypen_types = yaml.safe_load(file)
-            self.geschaeftstypen = pd.DataFrame(
-                geschaeftstypen_types.values(),
-                index=geschaeftstypen_types.keys(),
-            )
+        self.geschaeftstypen = pd.DataFrame(
+            geschaeftstypen.values(),
+            index=geschaeftstypen.keys(),
+        )
 
     def create_database(self):
         Path(self.db_folder).mkdir(parents=True, exist_ok=True)

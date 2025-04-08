@@ -24,6 +24,7 @@ dependencies = [
     "ruff>=0.9.7",
     "html5lib>=1.1",
     "pypdf>=5.4.0",
+    "tomli>=2.2.1",
 ]
 dynamic = [
     "classifiers",
