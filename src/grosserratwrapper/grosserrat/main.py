@@ -5,8 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from ..config import geschaeftstypen
-
 import aiohttp
 import pandas as pd
 import requests
@@ -15,6 +13,8 @@ from pypdf import PdfReader, PdfWriter
 from sqlalchemy import ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, relationship
 from sqlalchemy.testing.schema import mapped_column
+
+from ..config import geschaeftstypen
 
 # Basics
 (
@@ -190,6 +190,7 @@ class GrosserRat:
 class Grossrat(GrosserRat):
     def __init__(self, memberid: int):
         super().__init__()
+        self.member_page_url = None
         self.html_list = None
         self.link_list = None
         self.gsnr_list = None
@@ -247,12 +248,10 @@ class Grossrat(GrosserRat):
             self.memberid
         )
         self.page_resp = requests.get(self.member_page_url)
-        return self.page_resp
 
     def create_linklist(self):
         """
         Extracts links to geschaefte from member page
-        :return:
         """
 
         def first_element(x):
@@ -278,7 +277,6 @@ class Grossrat(GrosserRat):
     def save_geschaefte(self):
         """
         Saves geschaefte to SQLite database
-        :return:
         """
         db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
         self.geschaefte.to_sql(
@@ -292,8 +290,8 @@ class Grossrat(GrosserRat):
     def load_geschaefte(self):
         """
         Loads geschaefte from SQLite database
-        :return:
         """
+
         db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
         with db_engine.begin() as connection:
             self.geschaefte = pd.read_sql(
@@ -312,9 +310,7 @@ class Grossrat(GrosserRat):
     def save_documents(self):
         """
         Saves documents to SQLite database
-        :return:
         """
-        self.manually_correct_documents()
         db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
         self.documents.to_sql(
             name="documents",
@@ -324,64 +320,9 @@ class Grossrat(GrosserRat):
             chunksize=1000,
         )
 
-    def manually_correct_documents(self):
-        self.documents.loc[
-            self.documents.doc_url
-            == "https://grosserrat.bs.ch/dokumente/100404/000000404382.pdf",
-            "gesid",
-        ] = "23.5153"
-        self.documents.loc[
-            self.documents.doc_url
-            == "https://grosserrat.bs.ch/dokumente/100404/000000404382.pdf",
-            "docid",
-        ] = "23.5153.01"
-        self.documents.loc[
-            self.documents.doc_url
-            == "https://grosserrat.bs.ch/dokumente/100397/000000397037.pdf",
-            "docid",
-        ] = "22.5212.01"
-        self.documents.loc[
-            self.documents.gesid == "21.1562",
-            "docid",
-        ] = "21.5562.02"
-        self.documents.loc[
-            self.documents.gesid == "21.1562",
-            "gesid",
-        ] = "21.5562"
-        self.documents.loc[
-            self.documents.gesid == "15.4090",
-            "gesid",
-        ] = "15.5090"
-        self.documents.loc[
-            self.documents.docid == "15.4090.02",
-            "docid",
-        ] = "15.5090.02"
-        self.documents.loc[
-            self.documents.docid == "14.5404.01",
-            "docid",
-        ] = "14.5304.01"
-        self.documents.loc[
-            self.documents.gesid == "14.5404",
-            "gesid",
-        ] = "14.5304"
-        self.geschaefte.loc[
-            self.geschaefte.gesid == "14.5404",
-            "gesid",
-        ] = "14.5304"
-        self.documents.loc[
-            self.documents.docid == "14.5403.02",
-            "docid",
-        ] = "14.5303.02"
-        self.documents.loc[
-            self.documents.gesid == "14.5403",
-            "gesid",
-        ] = "14.5303"
-        # %TODO: 14.5303.02 kreiert immer noch Probleme: An error occurred: No connection adapters were found for 'docid\n14.5303.02    https://grosserrat.bs.ch/dokumente/100378/0000...\n14.5303.02    https://grosserrat.bs.ch/dokumente/100378/0000...\nName: doc_url, dtype: object'
-
     def load_documents(self):
         """
         Loads documents from SQLite database
-        :return:
         """
         db_engine = create_engine(f"sqlite:///{self.db_folder}/grossrat.sqlite3")
         with db_engine.begin() as connection:
@@ -401,7 +342,6 @@ class Grossrat(GrosserRat):
     def get_dok_details(self):
         """
         Loads the geschaeft detail pages
-        :return:
         """
         self.html_list = asyncio.run(
             get_dok_details_async(
@@ -412,13 +352,12 @@ class Grossrat(GrosserRat):
     def save_dok_details_to_pickle(self):
         """
         Saves geschaeft detail pages to pickle
-        :return:
         """
-        with open(Path("../../../dok_detail_list.pkl"), "wb") as f:
+        with open(Path("tmp/dok_detail_list.pkl"), "wb") as f:
             pickle.dump(self.html_list, f)
 
     def get_dok_details_from_pickle(self):
-        with open(Path("../../../dok_detail_list.pkl"), "rb") as f:
+        with open(Path("tmp/dok_detail_list.pkl"), "rb") as f:
             self.html_list = pickle.load(f)
 
     def extract_doc_details(self):
@@ -436,8 +375,7 @@ class Grossrat(GrosserRat):
             .transpose()
             .rename(columns={0: "gesid", 1: "ges_type", 4: "ges_status"})
         )
-        self.geschaefte[["ges_type", "ges_status"]] = pd.merge(
-            self.geschaefte[["gesid"]],
+        self.geschaefte[["ges_type", "ges_status"]] = self.geschaefte[["gesid"]].merge(
             ges_details[["gesid", "ges_type", "ges_status"]],
             on="gesid",
             how="left",
@@ -449,7 +387,8 @@ class Grossrat(GrosserRat):
                     value: int(key)
                     for key, value in zip(
                         self.geschaeftstypen.index.tolist(),
-                        self.geschaeftstypen[0].values.tolist(),
+                        self.geschaeftstypen[0].to_numpy().tolist(),
+                        strict=False,
                     )
                 }
             )
@@ -476,11 +415,10 @@ class Grossrat(GrosserRat):
         dok_details["creator"] = self.memberid
         self.documents[
             ["docid", "doc_date", "doc_type", "doc_url", "gesid", "creator"]
-        ] = pd.merge(self.documents[["docid"]], dok_details, how="right", on="docid")
+        ] = self.documents[["docid"]].merge(dok_details, how="right", on="docid")
 
     def download_pdfs(self):
         docid_counts = self.documents.docid.value_counts()
-        self.manually_correct_documents()
         for doc in self.documents.loc[
             self.documents.docid.isin(
                 docid_counts.loc[docid_counts == 1].index.tolist()
