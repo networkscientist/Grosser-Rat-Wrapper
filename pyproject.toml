@@ -34,6 +34,13 @@ dynamic = [
 [project.urls]
 repository = "https://github.com/networkscientist/Grosser-Rat-Wrapper"
 
+[project.optional-dependencies]
+docs = [
+    "myst-parser>=3.0.1",
+    "sphinx>=7.4.7",
+    "sphinx-rtd-theme>=3.0.2",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
