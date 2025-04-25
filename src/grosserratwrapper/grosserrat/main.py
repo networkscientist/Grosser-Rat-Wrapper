@@ -249,7 +249,7 @@ class Grossrat(GrosserRat):
         self.gsnr_list = None
         self.page_resp = None
         self.memberid = memberid
-        self.member_name = self.members_df.loc[self.memberid, "membername"]
+        self.member_name = self.members.loc[self.memberid, "membername"]
         self.cols_geschaefte = {
             "gesid": str,
             "memberid": int,
