@@ -64,6 +64,12 @@ class MemberTable(BaseTable):
     memberLastName: Mapped[str] = mapped_column(
         String(50), unique=False, nullable=False
     )
+    memberParty: Mapped[str] = mapped_column(
+        String(50), unique=False, nullable=True
+    )
+    memberDistrict: Mapped[str] = mapped_column(
+        String(50), unique=False, nullable=True
+    )
 
 
 class FileTable(BaseTable):
