@@ -36,6 +36,9 @@ BREAKING CHANGE: Change build backend to uv
 - **versioning**: Add `python-semantic-release` dev package
   ([`8f2a0a1`](https://github.com/networkscientist/Grosser-Rat-Wrapper/commit/8f2a0a1fa43cd675f895e43e4695e607ee083853))
 
+- **versioning**: Bump to version v1.0.0
+  ([`3efee49`](https://github.com/networkscientist/Grosser-Rat-Wrapper/commit/3efee499538bea86fd0eaa76288e5e44400a2355))
+
 ### Features
 
 - **config**: Geschaeftstypen.yaml replaced with config.toml entries
