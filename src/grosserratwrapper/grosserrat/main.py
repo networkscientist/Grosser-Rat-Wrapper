@@ -112,85 +112,132 @@ class DocumentTable(BaseTable):
 
 
 class GrosserRat:
-    def __init__(self):
-        members_overview_post_params = {
-            "filter[reiter]": "MIT",
-            "filter[search]": "",
-            "filter[section]": "",
-            "list[mit_limit]": "",
-            "list[ordering]": "name",
-            "list[direction]": "ASC",
-            "template": "MITcards",
-            "task": "",
-            "boxchecked": "0",
-            # 'a7a667e02dee5f6fcbc099b9a31a68ce':'1',
-            "list[fullordering]": "null+ASC",
+    def __init__(self, db_path='db', nur_aktuell=True, load_local=True, save_local=False):
+        self.memberFirstNameList = None
+        self.cols_members = {
+            "memberid": int,
+            "memberFirstName": str,
+            "memberLastName": str,
+            "memberParty": str,
+            "memberDistrict": str
         }
-        members_overview_post_params = members_overview_post_params | {
-            "filter[such_ehemalige_mit]": "1",
-            "filter[such_von_mit]": "2005-02-01",
-            "filter[such_bis_mit]": "2025-03-15",
-        }
-        members_overview_html = requests.post(
-            "https://grosserrat.bs.ch/mitglieder", data=members_overview_post_params
-        ).text
-        members_overview_soup = bs(members_overview_html, "lxml")
-        name_list = [
-            row.get_text()
-            for row in members_overview_soup.find_all(
-                "h6", attrs={"class": "person-name"}
-            )
-        ]
-        memberid_list = [
-            int(row.parent.get("data-uni_nr"))
-            for row in members_overview_soup.find_all("div", attrs={"class": "person"})
-        ]
-        self.members_df = pd.DataFrame(
-            data={"membername": name_list}, index=memberid_list
-        ).sort_index()
-        self.members_df.index.name = "memberid"
-        # %TODO: implement scraping member infos from member pages
-        # %TODO: implement function to save members to db
+        self.members = pd.DataFrame(
+            columns=list(self.cols_members.keys())
+        )
+        self.members = self.members.astype(self.cols_members)
+        self.db_path = db_path
+        self.nur_aktuell = nur_aktuell
+        self.load_local = load_local
+        self.save_local = save_local
 
-    def get_members(self, nur_aktuell=True):
+
+    def create_database(self):
+        Path(self.db_path).mkdir(parents=True, exist_ok=True)
+        Path(f'{self.db_path}/grossrat.sqlite3').touch(exist_ok=True)
+        engine = create_engine(f'sqlite:///{self.db_path}/grossrat.sqlite3')
+        BaseTable.metadata.create_all(engine)
+
+
+    def initialise(self):
+        self.create_database()
+
+    def load_db_from_local(self):
+        db_engine = create_engine(f'sqlite:///{self.db_path}/grossrat.sqlite3')
+        with db_engine.begin() as connection:
+            self.members = pd.read_sql(
+                'members',
+                con=connection,
+                dtype=self.cols_members,
+            )
+
+    def save_db_to_local(self):
+        db_engine = create_engine(f'sqlite:///{self.db_path}/grossrat.sqlite3')
+        self.members.to_sql(
+            name='members',
+            con=db_engine,
+            index=False,
+            if_exists='replace',
+            chunksize=1000,
+        )
+
+
+    def create_member_download_request_params(self):
+        nur_aktuell_dict_value = '0' if self.nur_aktuell else '1'
         members_overview_post_params = {
-            "filter[reiter]": "MIT",
-            "filter[search]": "",
-            "filter[section]": "",
-            "list[mit_limit]": "",
-            "list[ordering]": "name",
-            "list[direction]": "ASC",
-            "template": "MITcards",
-            "task": "",
-            "boxchecked": "0",
+            'filter[reiter]': 'MIT',
+            'filter[search]': '',
+            'filter[section]': '',
+            'list[mit_limit]': '',
+            'list[ordering]': 'name',
+            'list[direction]': 'ASC',
+            'template': 'MITcards',
+            'task': '',
+            'boxchecked': '0',
             # 'a7a667e02dee5f6fcbc099b9a31a68ce':'1',
-            "list[fullordering]": "null+ASC",
+            'list[fullordering]': 'null+ASC',
+            'filter[such_ehemalige_mit]': nur_aktuell_dict_value,
+            'filter[such_von_mit]': '2005-02-01',
+            'filter[such_bis_mit]': f"{datetime.now().strftime('%Y-%m-%d')}",
         }
-        if nur_aktuell is False:
-            members_overview_post_params = members_overview_post_params | {
-                "filter[such_ehemalige_mit]": "1",
-                "filter[such_von_mit]": "2005-02-01",
-                "filter[such_bis_mit]": "2025-03-15",
-            }
+        return members_overview_post_params
+
+    def fetch_member_pages(self, memberid_list):
+        self.member_pages = asyncio.run(
+            get_dok_details_async(
+                "https://grosserrat.bs.ch/mitglieder/" + self.members["memberid"].astype(str)
+            )
+        )
+
+    def download_member_database(self):
         members_overview_html = requests.post(
-            "https://grosserrat.bs.ch/mitglieder", data=members_overview_post_params
+            "https://grosserrat.bs.ch/mitglieder", data=self.create_member_download_request_params()
         ).text
         members_overview_soup = bs(members_overview_html, "lxml")
-        name_list = [
-            row.get_text()
-            for row in members_overview_soup.find_all(
-                "h6", attrs={"class": "person-name"}
-            )
-        ]
+
         memberid_list = [
             int(row.parent.get("data-uni_nr"))
             for row in members_overview_soup.find_all("div", attrs={"class": "person"})
         ]
-        self.members_df = pd.DataFrame(
-            data={"membername": name_list}, index=memberid_list
-        ).sort_index()
-        self.members_df.index.name = "memberid"
-        return self.members_df
+        self.members['memberid'] = memberid_list
+        self.fetch_member_pages(memberid_list)
+
+        dd_items = [
+            [item.get_text() for item in detail_table] for detail_table in [
+            bs(x, 'lxml').find_all("dd")
+            for x in self.member_pages
+            ]
+        ]
+
+        dt_items = [
+            [item.get_text() for item in detail_table] for detail_table in [
+            bs(x, 'lxml').find_all("dt")
+            for x in self.member_pages
+            ]
+        ]
+        unique_keys_dict = {
+            'memberid': 'memberid',
+            'memberFirstName':'Vorname',
+            'memberLastName':'Name',
+            'memberParty':'Partei',
+            'memberDistrict':'Wahlkreis'
+        }
+        dd_dt_combined_dict = [dict(zip(sublist1, sublist2, strict=False)) for sublist1, sublist2 in zip(dt_items, dd_items, strict=False)]
+
+        final_list = deque([item[name].rstrip() for item in dd_dt_combined_dict] for name in [val for val in unique_keys_dict.values() if val != 'memberid'])
+        final_dict = {key:value for key,value in zip([val for val in unique_keys_dict.values() if val != 'memberid'], final_list, strict=False)}
+        final_dict['memberid'] = memberid_list
+        self.members = pd.DataFrame(
+            data=final_dict,
+        ).rename(columns={v: k for k, v in unique_keys_dict.items()}).set_index('memberid')
+
+        # if self.load_local:
+        #     self.load_db_from_local()
+
+        # def save_members(self):
+        #     pass
+            # %TODO: implement function to save members to db
+
+        # %TODO: implement scraping member infos from member pages
 
 
 class Grossrat(GrosserRat):
