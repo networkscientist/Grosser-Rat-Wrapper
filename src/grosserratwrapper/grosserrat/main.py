@@ -25,7 +25,7 @@ from ..config import geschaeftstypen
     dok_title_total_list,
     dok_link_total_list,
     dok_date_total_list,
-) = [[] for _ in range(6)]
+) = [list for _ in range(6)]
 
 
 async def get_resp_async(url, session):
