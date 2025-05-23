@@ -97,9 +97,7 @@ class DocumentTable(BaseTable):
 
 
 class GrosserRat:
-    def __init__(
-        self, db_path='db', nur_aktuell=True, load_local=True, save_local=False
-    ):
+    def __init__(self, db_path='db', nur_aktuell=True, load_local=True, save_local=False, db_name='grossrat'):
         self.memberFirstNameList = None
         self.cols_members = {
             'memberid': int,
@@ -114,6 +112,7 @@ class GrosserRat:
         self.nur_aktuell = nur_aktuell
         self.load_local = load_local
         self.save_local = save_local
+        self.db_name = db_name
 
     def create_database(self):
         Path(self.db_path).mkdir(parents=True, exist_ok=True)
@@ -125,7 +124,7 @@ class GrosserRat:
         self.create_database()
 
     def load_db_from_local(self):
-        db_engine = create_engine(f'sqlite:///{self.db_path}/grossrat.sqlite3')
+        db_engine = create_engine(f'sqlite:///{self.db_path}/{self.db_name}.sqlite3')
         with db_engine.begin() as connection:
             self.members = pd.read_sql(
                 'members',
