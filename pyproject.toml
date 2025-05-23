@@ -28,12 +28,36 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "myst-parser>=3.0.1",
-    "pytest>=8.3.5",
     "python-semantic-release>=9.21.0",
     "ruff>=0.11.7",
+]
+docs = [
+    "jupyterlab>=4.4.2",
+    "myst-parser>=3.0.1",
     "sphinx>=7.4.7",
     "sphinx-rtd-theme>=3.0.2",
+]
+test = [
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+    "pytest-xdist>=3.6.1",
+    "tox>=4.26.0",
+]
+
+performance = [
+    "pandas[performance]>=2.2.3",
+]
+all = [
+    {include-group="dev"},
+    {include-group="docs"},
+    {include-group="test"},
+    {include-group="performance"}
+]
+type = [
+    "mypy>=1.15.0",
+    "pandas-stubs>=2.2.2.240807",
+    "types-beautifulsoup4>=4.12.0.20250516",
+    "types-requests>=2.32.0.20250515",
 ]
 
 [project.urls]
