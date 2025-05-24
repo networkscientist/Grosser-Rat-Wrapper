@@ -25,7 +25,7 @@ from ..config import geschaeftstypen
     dok_title_total_list,
     dok_link_total_list,
     dok_date_total_list,
-) = [[] for _ in range(6)]
+) = [list for _ in range(6)]
 
 
 async def get_resp_async(url, session):
@@ -56,15 +56,9 @@ class BaseTable(DeclarativeBase):
 class MemberTable(BaseTable):
     __tablename__ = 'members'
 
-    memberid: Mapped[int] = mapped_column(
-        Integer, nullable=False, primary_key=True, unique=True
-    )
-    memberFirstName: Mapped[str] = mapped_column(
-        String(50), unique=False, nullable=False
-    )
-    memberLastName: Mapped[str] = mapped_column(
-        String(50), unique=False, nullable=False
-    )
+    memberid: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True, unique=True)
+    memberFirstName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
+    memberLastName: Mapped[str] = mapped_column(String(50), unique=False, nullable=False)
     memberParty: Mapped[str] = mapped_column(String(50), unique=False, nullable=True)
     memberDistrict: Mapped[str] = mapped_column(String(50), unique=False, nullable=True)
 
@@ -72,9 +66,7 @@ class MemberTable(BaseTable):
 class FileTable(BaseTable):
     __tablename__ = 'files'
 
-    fileid: Mapped[str] = mapped_column(
-        String(100), nullable=False, primary_key=True, unique=True
-    )
+    fileid: Mapped[str] = mapped_column(String(100), nullable=False, primary_key=True, unique=True)
     docid: Mapped[str] = mapped_column(String(100), nullable=False)
     path: Mapped[str] = mapped_column(String(250), nullable=False)
 
@@ -82,9 +74,7 @@ class FileTable(BaseTable):
 class GeschaeftTable(BaseTable):
     __tablename__ = 'geschaefte'
 
-    gesid: Mapped[str] = mapped_column(
-        String(50), nullable=False, primary_key=True, unique=True
-    )
+    gesid: Mapped[str] = mapped_column(String(50), nullable=False, primary_key=True, unique=True)
     docs: Mapped[List['DocumentTable']] = relationship(back_populates='ges')
     memberid: Mapped[int] = mapped_column(Integer, nullable=False)
     ges_titel: Mapped[str] = mapped_column(String(250), nullable=True)
@@ -97,9 +87,7 @@ class GeschaeftTable(BaseTable):
 class DocumentTable(BaseTable):
     __tablename__ = 'documents'
 
-    docid: Mapped[str] = mapped_column(
-        String(10), nullable=False, primary_key=True, unique=True
-    )
+    docid: Mapped[str] = mapped_column(String(10), nullable=False, primary_key=True, unique=True)
     gesid: Mapped[str] = mapped_column(ForeignKey('geschaefte.gesid'))
     ges: Mapped['GeschaeftTable'] = relationship(back_populates='docs')
     doc_type: Mapped[str] = mapped_column(String(50))
@@ -109,9 +97,7 @@ class DocumentTable(BaseTable):
 
 
 class GrosserRat:
-    def __init__(
-        self, db_path='db', nur_aktuell=True, load_local=True, save_local=False
-    ):
+    def __init__(self, db_path='db', nur_aktuell=True, load_local=True, save_local=False, db_name='grossrat'):
         self.memberFirstNameList = None
         self.cols_members = {
             'memberid': int,
@@ -126,6 +112,7 @@ class GrosserRat:
         self.nur_aktuell = nur_aktuell
         self.load_local = load_local
         self.save_local = save_local
+        self.db_name = db_name
 
     def create_database(self):
         Path(self.db_path).mkdir(parents=True, exist_ok=True)
@@ -137,7 +124,7 @@ class GrosserRat:
         self.create_database()
 
     def load_db_from_local(self):
-        db_engine = create_engine(f'sqlite:///{self.db_path}/grossrat.sqlite3')
+        db_engine = create_engine(f'sqlite:///{self.db_path}/{self.db_name}.sqlite3')
         with db_engine.begin() as connection:
             self.members = pd.read_sql(
                 'members',
@@ -177,10 +164,7 @@ class GrosserRat:
 
     def fetch_member_pages(self, memberid_list):
         self.member_pages = asyncio.run(
-            get_dok_details_async(
-                'https://grosserrat.bs.ch/mitglieder/'
-                + self.members['memberid'].astype(str)
-            )
+            get_dok_details_async('https://grosserrat.bs.ch/mitglieder/' + self.members['memberid'].astype(str))
         )
 
     def download_member_database(self):
@@ -199,16 +183,12 @@ class GrosserRat:
 
         dd_items = [
             [item.get_text() for item in detail_table]
-            for detail_table in [
-                bs(x, 'lxml').find_all('dd') for x in self.member_pages
-            ]
+            for detail_table in [bs(x, 'lxml').find_all('dd') for x in self.member_pages]
         ]
 
         dt_items = [
             [item.get_text() for item in detail_table]
-            for detail_table in [
-                bs(x, 'lxml').find_all('dt') for x in self.member_pages
-            ]
+            for detail_table in [bs(x, 'lxml').find_all('dt') for x in self.member_pages]
         ]
         unique_keys_dict = {
             'memberid': 'memberid',
@@ -218,8 +198,7 @@ class GrosserRat:
             'memberDistrict': 'Wahlkreis',
         }
         dd_dt_combined_dict = [
-            dict(zip(sublist1, sublist2, strict=False))
-            for sublist1, sublist2 in zip(dt_items, dd_items, strict=False)
+            dict(zip(sublist1, sublist2, strict=False)) for sublist1, sublist2 in zip(dt_items, dd_items, strict=False)
         ]
 
         final_list = deque(
@@ -310,9 +289,7 @@ class Grossrat(GrosserRat):
         BaseTable.metadata.create_all(engine)
 
     def get_member_page(self):
-        self.member_page_url = 'https://grosserrat.bs.ch/mitglieder/' + str(
-            self.memberid
-        )
+        self.member_page_url = 'https://grosserrat.bs.ch/mitglieder/' + str(self.memberid)
         self.page_resp = requests.get(self.member_page_url)
 
     def create_linklist(self):
@@ -331,12 +308,10 @@ class Grossrat(GrosserRat):
                 converters={0: first_element, 2: first_element},
             )
         )
-        self.geschaefte[['gesid', 'ges_url']] = self.geschaefte[1].apply(
-            lambda x: pd.Series(x)
-        )
-        self.geschaefte = self.geschaefte.rename(
-            columns={0: 'ges_date', 2: 'ges_titel'}
-        )[['gesid', 'ges_date', 'ges_titel', 'ges_url']]
+        self.geschaefte[['gesid', 'ges_url']] = self.geschaefte[1].apply(lambda x: pd.Series(x))
+        self.geschaefte = self.geschaefte.rename(columns={0: 'ges_date', 2: 'ges_titel'})[
+            ['gesid', 'ges_date', 'ges_titel', 'ges_url']
+        ]
         self.geschaefte = self.geschaefte[['gesid', 'ges_date', 'ges_titel', 'ges_url']]
         self.geschaefte['memberid'] = self.memberid
 
@@ -409,11 +384,7 @@ class Grossrat(GrosserRat):
         """
         Loads the geschaeft detail pages
         """
-        self.html_list = asyncio.run(
-            get_dok_details_async(
-                'https://grosserrat.bs.ch/' + self.geschaefte['ges_url']
-            )
-        )
+        self.html_list = asyncio.run(get_dok_details_async('https://grosserrat.bs.ch/' + self.geschaefte['ges_url']))
 
     def save_dok_details_to_pickle(self):
         """
@@ -431,15 +402,11 @@ class Grossrat(GrosserRat):
             return x[0]
 
         ges_details_list = [
-            pd.read_html(pd_from_html, attrs={'id': 'detail_table_geschaeft_resumee'})[
-                0
-            ].T.iloc[1]
+            pd.read_html(pd_from_html, attrs={'id': 'detail_table_geschaeft_resumee'})[0].T.iloc[1]
             for pd_from_html in self.html_list
         ]
         ges_details = (
-            pd.concat(ges_details_list, axis=1)
-            .transpose()
-            .rename(columns={0: 'gesid', 1: 'ges_type', 4: 'ges_status'})
+            pd.concat(ges_details_list, axis=1).transpose().rename(columns={0: 'gesid', 1: 'ges_type', 4: 'ges_status'})
         )
         self.geschaefte[['ges_type', 'ges_status']] = self.geschaefte[['gesid']].merge(
             ges_details[['gesid', 'ges_type', 'ges_status']],
@@ -474,21 +441,17 @@ class Grossrat(GrosserRat):
             columns={'Nummer': 'docid', 'Datum': 'doc_date', 'Titel': 'doc_type'}
         )
         dok_details.index = pd.RangeIndex(0, len(dok_details))
-        dok_details[['doc_type', 'doc_url']] = pd.DataFrame(
-            dok_details['doc_type'].tolist()
-        )
+        dok_details[['doc_type', 'doc_url']] = pd.DataFrame(dok_details['doc_type'].tolist())
         dok_details['gesid'] = dok_details.docid.str.extract(pat=r'^(\d+\.\d+)')
         dok_details['creator'] = self.memberid
-        self.documents[
-            ['docid', 'doc_date', 'doc_type', 'doc_url', 'gesid', 'creator']
-        ] = self.documents[['docid']].merge(dok_details, how='right', on='docid')
+        self.documents[['docid', 'doc_date', 'doc_type', 'doc_url', 'gesid', 'creator']] = self.documents[
+            ['docid']
+        ].merge(dok_details, how='right', on='docid')
 
     def download_pdfs(self):
         docid_counts = self.documents.docid.value_counts()
         for doc in self.documents.loc[
-            self.documents.docid.isin(
-                docid_counts.loc[docid_counts == 1].index.tolist()
-            ),
+            self.documents.docid.isin(docid_counts.loc[docid_counts == 1].index.tolist()),
             'docid',
         ]:
             try:
@@ -498,16 +461,11 @@ class Grossrat(GrosserRat):
                 writer = PdfWriter(reader)
                 if 'Text' in self.documents.set_index('docid').at[doc, 'doc_type']:
                     folder = 'Text'
-                elif (
-                    self.documents.set_index('docid').at[doc, 'doc_type']
-                    == 'Schreiben des RR'
-                ):
+                elif self.documents.set_index('docid').at[doc, 'doc_type'] == 'Schreiben des RR':
                     folder = 'Antwort'
                 else:
                     folder = 'Diverses'
-                with open(
-                    f'pdfs/{folder}/{doc.replace(".", "_")}.pdf', 'wb'
-                ) as newfile:
+                with open(f'pdfs/{folder}/{doc.replace(".", "_")}.pdf', 'wb') as newfile:
                     # Autor taken from superclass's member_df
                     writer.add_metadata(
                         {
@@ -524,20 +482,14 @@ class Grossrat(GrosserRat):
                                 0,
                             ],
                             '/Keywords': 'Keywords',
-                            '/CreationDate': self.documents.set_index('docid').at[
-                                doc, 'doc_date'
-                            ],
+                            '/CreationDate': self.documents.set_index('docid').at[doc, 'doc_date'],
                             '/ModDate': datetime.today().strftime('%d.%m.%Y'),
                             '/Creator': self.members_df.at[self.memberid, 'membername'],
-                            '/GeschaeftsId': self.documents.set_index('docid').at[
-                                doc, 'gesid'
-                            ],
+                            '/GeschaeftsId': self.documents.set_index('docid').at[doc, 'gesid'],
                             '/DokumentId': doc,
                         }
                     )
                     writer.write(newfile)
             except Exception as e:
                 print('An error occurred:', e)
-                print(
-                    f'Doc-Url: {self.documents.set_index("docid").at[doc, "doc_url"]}'
-                )
+                print(f'Doc-Url: {self.documents.set_index("docid").at[doc, "doc_url"]}')

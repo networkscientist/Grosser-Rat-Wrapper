@@ -13,7 +13,7 @@ keywords = [
 dynamic = [
     "classifiers",
 ]
-version="1.0.0"
+version="0.0.1"
 
 dependencies = [
     "requests>=2.32.3",
@@ -28,12 +28,36 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "myst-parser>=3.0.1",
-    "pytest>=8.3.5",
     "python-semantic-release>=9.21.0",
     "ruff>=0.11.7",
+]
+docs = [
+    "jupyterlab>=4.4.2",
+    "myst-parser>=3.0.1",
     "sphinx>=7.4.7",
     "sphinx-rtd-theme>=3.0.2",
+]
+test = [
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+    "pytest-xdist>=3.6.1",
+    "tox>=4.26.0",
+]
+
+performance = [
+    "pandas[performance]>=2.2.3",
+]
+all = [
+    {include-group="dev"},
+    {include-group="docs"},
+    {include-group="test"},
+    {include-group="performance"}
+]
+type = [
+    "mypy>=1.15.0",
+    "pandas-stubs>=2.2.2.240807",
+    "types-beautifulsoup4>=4.12.0.20250516",
+    "types-requests>=2.32.0.20250515",
 ]
 
 [project.urls]
@@ -83,7 +107,7 @@ exclude = [
     "venv",
 ]
 # Same as Black.
-line-length = 88
+line-length = 120
 indent-width = 4
 
 target-version = "py312"  # Adjust to your Python version
@@ -130,6 +154,110 @@ docstring-code-line-length = "dynamic"
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"  # Accepts: "google", "numpy", or "pep257".
+
+[tool.pytest.ini_options]
+markers = [
+	"unit: unit tests",
+	"integration: integration tests",
+	"regression: regression tests",
+	"performance: performance tests",
+	"skip: slow tests or depending on local data"
+	]
+
+[tool.tox]
+requires = ["tox>=4.19"]
+isolated_build = true
+# format code and carry out tests in the following python versions
+env_list=[
+    'format',
+    '3.9',
+    '3.10',
+    '3.11',
+    '3.12',
+    '3.13',
+]
+
+# common dependencies
+[tool.tox.env_run_base]
+dependency_groups = ['test']
+description = "Run test under {base_python}"
+commands = [["pytest"]]
+
+# run with uvx --with tox-uv tox -e lint
+# format, lint and analyse types
+[tool.tox.env.lint]
+description = "Lint with Ruff under {base_python}"
+dependency_groups = ['type', 'test']
+allowlist_externals = ['ruff']
+ignore_errors = true
+commands = [["ruff", "format", "src", "tests"], ["ruff", "check", "src", "tests"], ["mypy"]]
+
+# format
+[tool.tox.env.format]
+description = "Format with Ruff under {base_python}"
+skip_install = true
+allowlist_externals = ['ruff']
+commands = [["ruff", "format", "src", "tests"]]
+
+# lint and suggest fixes
+[tool.tox.env.fix]
+description = "run ruff check on code base"
+skip_install = true
+allowlist_externals = ['ruff']
+commands = [["ruff", "check", "src", "tests"]]
+
+# static type analysis with mypy
+[tool.tox.env.type]
+description = "run mypy type check on code base"
+dependency_groups = ['type']
+commands = [["mypy"]]
+
+[tool.mypy]
+files = [
+    "src",
+    "tests"
+]
+pretty=true
+show_error_context = true
+ignore_missing_imports = true
+
+[tool.coverage.run]
+branch=true
+data_file="tests/cover/.coverage"
+
+[tool.coverage.paths]
+source = [
+    "src/grosserratwrapper",
+    "*/site-packages/grosserratwrapper/"
+]
+
+[tool.coverage.report]
+
+# Regexes for lines to exclude from consideration
+exclude_also = [
+    # Don't complain about missing debug-only code:
+    "def __repr__",
+    "if self\\.debug",
+
+    # Don't complain if tests don't hit defensive assertion code:
+    "raise AssertionError",
+    "raise NotImplementedError",
+
+    # Don't complain if non-runnable code isn't run:
+    "if 0:",
+    "if __name__ == .__main__.:",
+
+    # Don't complain about abstract methods, they aren't run:
+    "@(abc\\.)?abstractmethod",
+    ]
+show_missing=true
+skip_empty=true
+skip_covered=true
+#fail_under=80
+#ignore_errors = true
+
+[tool.coverage.html]
+directory = "tests/coverage_html_report"
 
 [tool.semantic_release]
 assets = []
